@@ -4,13 +4,17 @@ import time
 import socket
 import sys
 import threading
-import json
 
 # RFID 리더 초기화
 reader = SimpleMFRC522()
 
+# 이전 설정 초기화 및 경고 비활성화
+GPIO.cleanup()
+GPIO.setwarnings(False)
+
 # GPIO 모드 설정
 GPIO.setmode(GPIO.BCM)
+
 
 # PIR 센서 핀 번호
 PIR_PIN1 = 22  # 첫 번째 센서
@@ -34,14 +38,11 @@ def connect_to_server(server_ip, server_port):
         print(f"Server Connection Failed..: {e}")
         return None
 
-def send_json(sock, id, status, direction=None):
-    """JSON 메시지를 서버로 전송"""
-    payload = {
-        "id": id,
-        "status": status,
-        "direction": direction
-    }
-    message = json.dumps(payload)
+def send_numeric(sock, id, status, direction=None):
+    """숫자 형식 메시지를 서버로 전송"""
+    status_digit = "1" if status == "success" else "0"
+    direction_digit = "1" if direction == "entry" else "0"
+    message = f"{id}{status_digit}{direction_digit}"  # 14자리 메시지 생성
     sock.send(message.encode())
     print(f"Sent to server: {message}")
 
@@ -63,7 +64,7 @@ def monitor_motion(sock, id):
         if sensor1_triggered and sensor2_triggered:
             direction = "entry" if GPIO.input(PIR_PIN2) else "exit"
             print(f"결과: {direction}")
-            send_json(sock, id, "success", direction)
+            send_numeric(sock, id, "success", direction)
             return
 
         time.sleep(0.1)  # 빠른 루프 방지
@@ -71,13 +72,13 @@ def monitor_motion(sock, id):
     # 10초 후 결과 처리
     if not sensor1_triggered and not sensor2_triggered:
         print("결과: 실패 (두 센서 모두 감지되지 않음)")
-        send_json(sock, id, "failure")
+        send_numeric(sock, id, "failure")
     elif sensor1_triggered != sensor2_triggered:
         print("결과: 실패 (한 센서만 감지됨)")
-        send_json(sock, id, "failure")
+        send_numeric(sock, id, "failure")
     else:
         print("결과: 실패 (예외 상황)")
-        send_json(sock, id, "failure")
+        send_numeric(sock, id, "failure")
 
 def receive_messages(sock):
     """서버로부터 메시지를 수신하는 함수 (별도 스레드로 실행)"""
@@ -87,14 +88,15 @@ def receive_messages(sock):
             if data:
                 response = data.decode()
                 print(f"Message from Server: {response}")
-                if len(response) == 13:
-                    rfid_id = response[:12]
-                    action = response[-1]
-                    if action == "1":
-                        print("모션 센서 활성화")
-                        monitor_motion(sock, rfid_id)
-                    else:
-                        print("모션 센서 비활성화")
+                rfid_id = response[:12]
+                action = response[12]
+                print(f"rfid_id: {rfid_id}")
+                print(f"action: {action}")
+                if action == "1":
+                    print("모션 센서 활성화")
+                    monitor_motion(sock, rfid_id)
+                else:
+                    print("모션 센서 비활성화")
             else:
                 print("Server closed the connection.")
                 break
