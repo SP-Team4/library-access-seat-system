@@ -193,31 +193,29 @@ void *servo(void *data){  //얘를 스레드 함수로 둬야할지 아니면 �
 void servo(int open){ 
     PWMExport(PWM);
     PWMWritePeriod(PWM, 5000000);
-    PWMWriteDutyCycle(PWM, (open?0:300*10000));
+    PWMWriteDutyCycle(PWM, (open?0:30*100000));
     PWMEnable(PWM);
 
-    printf("Gate open\n");
 
     if (open){
-      for (int i = 0; i < 300; i++) {
-        PWMWriteDutyCycle(PWM, i * 10000);
+      printf("Gate open\n");
+      for (int i = 0; i < 30; i++) {
+        PWMWriteDutyCycle(PWM, i * 100000);
         usleep(10000);
       }
     }
-    else{
-      for (int i = 300; i > 0; i++) {
-        PWMWriteDutyCycle(PWM, i * 10000);
-        usleep(10000);
-      } 
-    }
+      else{
+        printf("Gate close\n");
+        for (int i = 30; i > 0; i++) {
+          PWMWriteDutyCycle(PWM, i * 100000);
+          usleep(10000);
+        } 
+      }
 }
 
 void *entrance(void *data){
   char msg[14];       //출입관리 서버와 통신 [0-11]rfid, [12]valid, [13]NULL
   memset(&msg, 0, sizeof(msg));
-
-  char connect_msg[] = "Entrance client socket\n";
-  write(clnt_sock_entrance, connect_msg, sizeof(connect_msg));
 
   //STUDENT_DATA std;
 
@@ -226,7 +224,7 @@ void *entrance(void *data){
     memset(&rfid, 0, sizeof(rfid));
 
     for (int i=0; i<12; i++){
-      if (read(clnt_sock_entrance, msg[i], sizeof(char)) == -1) 
+      if (read(clnt_sock_entrance, &msg[i], sizeof(char)) == -1) 
         error_handling("[Entrance Server] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
@@ -254,7 +252,7 @@ void *entrance(void *data){
     servo(1);
     //모션센서 결과 받기
     for (int i=0; i<13; i++){
-      if (read(clnt_sock_entrance, msg[i], sizeof(char)) == -1) 
+      if (read(clnt_sock_entrance, &msg[i], sizeof(char)) == -1) 
         error_handling("[Entrance Server] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
@@ -287,7 +285,7 @@ void *reservation(void *data){
 
   while(1){
     for (int i=0; i<12; i++){
-      if (read(clnt_sock_seat_reserv, msg[i], sizeof(char)) == -1) 
+      if (read(clnt_sock_seat_reserv, &msg[i], sizeof(char)) == -1) 
         error_handling("[Seat Reservation] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
@@ -302,21 +300,21 @@ void *reservation(void *data){
       continue;
     }
 
-    int seat_list = [];
+    int seat_list[4];
     //DB -> 예약 가능한 좌석 목록 받기 (또는 서버에 저장하고 있어도 됨..)
 
-    char seat_msg[];
-    sprintf(seat_msg, 
-    "
-    Available Seats: 
+    char seat_msg[1024] = {0};
+    // sprintf(seat_msg, 
+    // "
+    // Available Seats: 
 
-    ┼┬┬┬┼┬┬┬┼┬┬┬┼┬┬┬┼
-    ┼ %d ┼ %d ┼ %d ┼ %d ┼
-    ┼┴┴┴┼┴┴┴┼┴┴┴┼┴┴┴┼
-    ", 1, 2, 3, 4);
+    // ┼┬┬┬┼┬┬┬┼┬┬┬┼┬┬┬┼
+    // ┼ %d ┼ %d ┼ %d ┼ %d ┼
+    // ┼┴┴┴┼┴┴┴┼┴┴┴┼┴┴┴┼
+    // ", 1, 2, 3, 4);
 
     for (int i=0; i<12; i++){
-      if (read(clnt_sock_seat_reserv, msg[i], sizeof(char)) == -1) 
+      if (read(clnt_sock_seat_reserv, &msg[i], sizeof(char)) == -1) 
         error_handling("[Seat Reservation] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
@@ -338,9 +336,6 @@ void *reservation(void *data){
 void *watching(void *data){
   int isValid = 0;
 
-  char connect_msg[] = "Seat watching client socket";
-  write(clnt_sock_entrance, connect_msg, sizeof(msg));
-
   char msg[3];       //좌석감시 서버와 통신 [0]좌석번호, [1]valid, [2]NULL
   memset(&msg, 0, sizeof(msg));
 
@@ -349,7 +344,7 @@ void *watching(void *data){
     int seat = 0;
 
     for (int i=0; i<2; i++){
-      if (read(clnt_sock_seat_watch, msg[i], sizeof(char)) == -1) 
+      if (read(clnt_sock_seat_watch, &msg[i], sizeof(char)) == -1) 
         error_handling("[Seat Watching] Unable to read \n");
       //strncpy(rfid[i], msg[0], 1);
     }
@@ -434,18 +429,18 @@ int main(int argc, char *argv[]) {
     printf("Seat watching client:  Connection established\n");
   }
 
-  printf("                                                                                                                                                                                                                                                                                                                                                                                                                  
-####    ##  ###                              ### #                                     
- ##     ##   ##                             ##  ##               #                     
- ##          ##                             ##   #              ##                     
- ##    ###   ## ##  ## # ###  ## # ### ##   ####   ### ##  ### ####  ###  ## ##  ##    
- ##     ##   ### ## ####   ## ####  ## #      ####  ## #  ##    ##  ## ## ### ### ##   
- ##  #  ##   ##  ## ##    ### ##    ## #    #   ##  ## #  ####  ##  ##### ##  ##  ##   
- ##  #  ##   ##  ## ##   # ## ##     ##     ##  ##   ##     ##  ##  ##    ##  ##  ##   
-###### ####  # ###  ##   #### ##     ##     # ###    ##   ###    ##  #### ##  ##  ##   
-                                   ###             ###                                 
-                                   ##              ##                                  
-  ");
+                                                                                                                                                                                                                                                                                                                                                                                                                 
+  printf(" ####    ##  ###                              ### #                                     \n");
+  printf(" ##     ##   ##                             ##  ##               #                      \n");
+  printf(" ##          ##                             ##   #              ##                      \n");
+  printf(" ##    ###   ## ##  ## # ###  ## # ### ##   ####   ### ##  ### ####  ###  ## ##  ##     \n");
+  printf(" ##     ##   ### ## ####   ## ####  ## #      ####  ## #  ##    ##  ## ## ### ### ##    \n");
+  printf(" ##  #  ##   ##  ## ##    ### ##    ## #    #   ##  ## #  ####  ##  ##### ##  ##  ##    \n");
+  printf(" ##  #  ##   ##  ## ##   # ## ##     ##     ##  ##   ##     ##  ##  ##    ##  ##  ##    \n");
+  printf(" ###### ####  # ###  ##   #### ##     ##     # ###    ##   ###    ##  #### ##  ##  ##   \n");
+  printf("                                    ###             ###                                 \n");
+  printf("                                    ##              ##                                  \n");
+  
     
   pthread_create(&entrance_thread, NULL, entrance, (void *)data);
   pthread_create(&seat_watch_thread, NULL, reservation, (void *)data);    
