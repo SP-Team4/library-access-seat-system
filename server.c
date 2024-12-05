@@ -217,7 +217,7 @@ void *entrance(void *data){
   memset(&msg, 0, sizeof(msg));
 
   char connect_msg[] = "Entrance client socket\n";
-  write(clnt_sock_entrance, connect_msg, sizeof(msg));
+  write(clnt_sock_entrance, connect_msg, sizeof(connect_msg));
 
   //STUDENT_DATA std;
 
@@ -227,12 +227,12 @@ void *entrance(void *data){
 
     for (int i=0; i<12; i++){
       if (read(clnt_sock_entrance, msg[i], sizeof(char)) == -1) 
-        error_handling("Unable to read from Entrance_Server\n");
+        error_handling("[Entrance Server] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
     strncpy(rfid, msg, 12);
 
-    printf("Successfully received RFID tag: %s \n", rfid);
+    printf("[Entrance Server] Received RFID tag: %s \n", rfid);
     //DB -> 해당 ID로 확인되는 user 있는지 찾기
     //PYTHON -> 카메라 사진 찍고 대조
     
@@ -241,13 +241,13 @@ void *entrance(void *data){
     strncpy(msg, rfid, 12);
     
     if (!camera || !db ){
-      printf("Invalid user \n");
+      printf("[Entrance Server] Invalid user \n");
       msg[12] = '0';
       write(clnt_sock_entrance, msg, sizeof(msg));
       continue; 
     }
 
-    printf("Welcome \n");
+    printf("[Entrance Server] Welcome \n");
     msg[12] = '1';
     write(clnt_sock_entrance, msg, sizeof(msg));
 
@@ -255,7 +255,7 @@ void *entrance(void *data){
     //모션센서 결과 받기
     for (int i=0; i<13; i++){
       if (read(clnt_sock_entrance, msg[i], sizeof(char)) == -1) 
-        error_handling("Unable to read from Entrance_Server\n");
+        error_handling("[Entrance Server] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
     //DB -> 모션센서 결과에 따라 학생 입장 결과 로그
@@ -272,13 +272,62 @@ void *entrance(void *data){
         //DB -> 해당 rfid 학생에 대해 좌석 취소
       }
     }
+    printf("end of entrance function");
   }
 }
 
 void *reservation(void *data){
-  char msg[] = "Seat reservation client socket";
-  write(clnt_sock_seat_reserv, msg, sizeof(msg));
+  char connection_msg[] = "Seat reservation client socket \n";
+  write(clnt_sock_seat_reserv, connection_msg, sizeof(connection_msg));
   
+  char msg[14];       //좌석예약 서버와 통신 [0-11]rfid, [12]valid, [13]NULL
+  char rfid[12];
+  memset(&msg, 0, sizeof(msg));
+  memset(&rfid, 0, sizeof(rfid));
+
+  while(1){
+    for (int i=0; i<12; i++){
+      if (read(clnt_sock_seat_reserv, msg[i], sizeof(char)) == -1) 
+        error_handling("[Seat Reservation] Unable to read\n");
+      //strncpy(rfid[i], msg[0], 1);
+    }
+    strncpy(rfid, msg, 12);
+
+    int isValid = 0;
+    //DB -> 해당 RFID로 예약된 좌석 있는지 확인 (있으면 1)
+    if (isValid){
+      //예약된 좌석이 있으면
+      snprintf(msg, 13, "%s0", rfid);
+      printf("Already reserved a seat \n");
+      continue;
+    }
+
+    int seat_list = [];
+    //DB -> 예약 가능한 좌석 목록 받기 (또는 서버에 저장하고 있어도 됨..)
+
+    char seat_msg[];
+    sprintf(seat_msg, 
+    "
+    Available Seats: 
+
+    ┼┬┬┬┼┬┬┬┼┬┬┬┼┬┬┬┼
+    ┼ %d ┼ %d ┼ %d ┼ %d ┼
+    ┼┴┴┴┼┴┴┴┼┴┴┴┼┴┴┴┼
+    ", 1, 2, 3, 4);
+
+    for (int i=0; i<12; i++){
+      if (read(clnt_sock_seat_reserv, msg[i], sizeof(char)) == -1) 
+        error_handling("[Seat Reservation] Unable to read\n");
+      //strncpy(rfid[i], msg[0], 1);
+    }
+    //rfid에 대해 지역변수에 저장된 rfid가 아니면 다시 read하는 절차 필요....
+    int seat = msg[0];
+
+    //DB -> RFID, seat으로 좌석 예약 진행
+    snprintf(msg, 2, "%s1", seat);
+    write(clnt_sock_seat_reserv, msg, sizeof(msg));
+    //LED 출력 변경
+  }
 
 
 
@@ -301,7 +350,7 @@ void *watching(void *data){
 
     for (int i=0; i<2; i++){
       if (read(clnt_sock_seat_watch, msg[i], sizeof(char)) == -1) 
-        error_handling("Unable to read from Seat Watching Server\n");
+        error_handling("[Seat Watching] Unable to read \n");
       //strncpy(rfid[i], msg[0], 1);
     }
     seat = msg[0];
@@ -310,9 +359,9 @@ void *watching(void *data){
     //DB -> 해당 좌석에 대해 count 정보 받아와서 count 변수에 저장, 증가 후 update
 
     if (count >= 3){
-    //DB -> 좌석 예약 취소 처리
       snprintf(msg, 2, "%d0", seat);
       write(clnt_sock_seat_watch, msg, sizeof(msg));
+      //DB -> 좌석 예약 취소 처리
     }
     else{
       snprintf(msg, 2, "%d1", seat);
@@ -385,7 +434,18 @@ int main(int argc, char *argv[]) {
     printf("Seat watching client:  Connection established\n");
   }
 
-  printf("### Start library-access-seat-system ###");
+  printf("                                                                                                                                                                                                                                                                                                                                                                                                                  
+####    ##  ###                              ### #                                     
+ ##     ##   ##                             ##  ##               #                     
+ ##          ##                             ##   #              ##                     
+ ##    ###   ## ##  ## # ###  ## # ### ##   ####   ### ##  ### ####  ###  ## ##  ##    
+ ##     ##   ### ## ####   ## ####  ## #      ####  ## #  ##    ##  ## ## ### ### ##   
+ ##  #  ##   ##  ## ##    ### ##    ## #    #   ##  ## #  ####  ##  ##### ##  ##  ##   
+ ##  #  ##   ##  ## ##   # ## ##     ##     ##  ##   ##     ##  ##  ##    ##  ##  ##   
+###### ####  # ###  ##   #### ##     ##     # ###    ##   ###    ##  #### ##  ##  ##   
+                                   ###             ###                                 
+                                   ##              ##                                  
+  ");
     
   pthread_create(&entrance_thread, NULL, entrance, (void *)data);
   pthread_create(&seat_watch_thread, NULL, reservation, (void *)data);    
