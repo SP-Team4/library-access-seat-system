@@ -162,7 +162,9 @@ void error_handling(char *message) {
 }
 
 /****** Thread Functions ******/
-void *servo(void *data){
+
+/*
+void *servo(void *data){  //얘를 스레드 함수로 둬야할지 아니면 그냥 함수로 둘지...
     PWMExport(PWM);
     PWMWritePeriod(PWM, 5000000);
     PWMWriteDutyCycle(PWM, 0);
@@ -175,24 +177,49 @@ void *servo(void *data){
       usleep(10000);
     }
 
-    sleep(10);
-    //10초 전에 모션센서로부터 결과 받으면 입력으로 침...
+    //모션센서 결과 수신하고 닫음
+    for (int i=0; i<13; i++){
+      if (read(clnt_sock_entrance, msg[i], sizeof(char)) == -1) 
+        error_handling("Unable to read from Entrance_Server\n");
+      //strncpy(rfid[i], msg[0], 1);
+    }
 
     for (int i = 300; i > 0; i++) {
       PWMWriteDutyCycle(PWM, i * 10000);
       usleep(10000);
-    }
+    }  
+}*/
 
+void servo(int open){ 
+    PWMExport(PWM);
+    PWMWritePeriod(PWM, 5000000);
+    PWMWriteDutyCycle(PWM, (open?0:300*10000));
+    PWMEnable(PWM);
+
+    printf("Gate open\n");
+
+    if (open){
+      for (int i = 0; i < 300; i++) {
+        PWMWriteDutyCycle(PWM, i * 10000);
+        usleep(10000);
+      }
+    }
+    else{
+      for (int i = 300; i > 0; i++) {
+        PWMWriteDutyCycle(PWM, i * 10000);
+        usleep(10000);
+      } 
+    }
 }
 
 void *entrance(void *data){
-  char msg[14];       //출입관리 서버와 통신 [0-11]rfid, [12]valid
+  char msg[14];       //출입관리 서버와 통신 [0-11]rfid, [12]valid, [13]NULL
   memset(&msg, 0, sizeof(msg));
 
   char connect_msg[] = "Entrance client socket\n";
   write(clnt_sock_entrance, connect_msg, sizeof(msg));
 
-  STUDENT_DATA std;
+  //STUDENT_DATA std;
 
   while (1){
     char rfid[12];
@@ -224,18 +251,18 @@ void *entrance(void *data){
     msg[12] = '1';
     write(clnt_sock_entrance, msg, sizeof(msg));
 
-    //서보모터 열기 -> 스레드로 관리...
-
-    //DB -> 학생 입장 결과 로그
-
+    servo(1);
     //모션센서 결과 받기
     for (int i=0; i<13; i++){
-      if (read(clnt_sock_entrance, &msg, sizeof(char)) == -1) 
+      if (read(clnt_sock_entrance, msg[i], sizeof(char)) == -1) 
         error_handling("Unable to read from Entrance_Server\n");
-      strncpy(rfid[i], msg[0], 1);
+      //strncpy(rfid[i], msg[0], 1);
     }
+    //DB -> 모션센서 결과에 따라 학생 입장 결과 로그
+    servo(0);
 
-    if (!msg[0]){
+    int entered = msg[0];
+    if (!entered){
       int seat = 0;
       //DB -> 해당 rfid 학생에 대해 예약된 좌석이 있는지 확인
       if (seat){
@@ -265,7 +292,7 @@ void *watching(void *data){
   char connect_msg[] = "Seat watching client socket";
   write(clnt_sock_entrance, connect_msg, sizeof(msg));
 
-  char msg[2];       //좌석감시 서버와 통신 [0]좌석번호, [12]valid
+  char msg[3];       //좌석감시 서버와 통신 [0]좌석번호, [1]valid, [2]NULL
   memset(&msg, 0, sizeof(msg));
 
   while(1){
@@ -363,12 +390,12 @@ int main(int argc, char *argv[]) {
   pthread_create(&entrance_thread, NULL, entrance, (void *)data);
   pthread_create(&seat_watch_thread, NULL, reservation, (void *)data);    
   pthread_create(&seat_reserv_thread, NULL, watching, (void *)data);
-  pthread_create(&servo_thread, NULL, servo, (void *)data);
+  //pthread_create(&servo_thread, NULL, servo, (void *)data);
 
   pthread_join(entrance_thread, (void **)&status);
   pthread_join(seat_watch_thread, (void **)&status);
   pthread_join(seat_reserv_thread, (void **)&status);
-  pthread_join(servo_thread, (void **)&status);
+  //pthread_join(servo_thread, (void **)&status);
 
   close(clnt_sock_entrance);
   close(clnt_sock_seat_reserv);
