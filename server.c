@@ -307,7 +307,6 @@ void *watching(void *data){
     seat = msg[0];
     printf("msg: %s", msg);
 
-    //DB -> 해당 좌석에 대해 count 정보 받아와서 count 변수에 저장, 증가 후 update
 
     if (count >= 3){
     //DB -> 좌석 예약 취소 처리
