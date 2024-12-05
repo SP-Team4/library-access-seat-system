@@ -40,7 +40,8 @@ def find_image(database_img):
                 highest_score = score
                 best_match = filename
 
-    if best_match:
+    if database_img == best_match:
+        print("Success!")
         print(f"The most similar image is: {best_match} with {highest_score} matches.")
         return 1
     else:

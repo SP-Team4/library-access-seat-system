@@ -9,6 +9,9 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+
 
 
 // #define BUF_SIZE 1024
@@ -234,6 +237,10 @@ void *entrance(void *data){
 
     printf("[Entrance Server] Received RFID tag: %s \n", rfid);
     //DB -> 해당 ID로 확인되는 user 있는지 찾기
+
+    
+
+
     //PYTHON -> 카메라 사진 찍고 대조
     
     int db = 0;     //DB 조회 결과
@@ -373,6 +380,22 @@ void *watching(void *data){
 
 
 int main(int argc, char *argv[]) {
+
+  //python.h 초기화
+  Py_Initialize();
+  PyObject *pName = PyUnicode_DecodeFSDefault("database");
+  PyObject *pModule = PyImport_Import(pName);
+  Py_DECREF(pName);
+
+  if (pModule == NULL) {
+      PyErr_Print();
+      fprintf(stderr, "Failed to load \"database\"\n");
+      return 1;
+  }
+
+
+
+
   int state = 1;
   int prev_state = 1;
 
