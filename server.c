@@ -9,6 +9,9 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+
 
 
 // #define BUF_SIZE 1024
@@ -231,7 +234,23 @@ void *entrance(void *data){
     strncpy(rfid, msg, 12);
 
     printf("[Entrance Server] Received RFID tag: %s \n", rfid);
-    //DB -> 해당 ID로 확인되는 user 있는지 찾기
+    // DB -> 해당 ID로 확인되는 user 있는지 찾기
+    PyObject *pFunc = PyObject_GetAttrString(pModule, "find_face_path");
+    if (pFunc && PyCallable_Check(pFunc)) {
+        PyObject *pArgs = PyTuple_Pack(1, PyUnicode_DecodeFSDefault(rfid));
+        PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
+        if (pValue != NULL) {
+            char *face_path = PyUnicode_AsUTF8(pValue);
+            printf("Face path: %s\n", face_path);
+            db = 1; // 사용자 찾음
+            Py_DECREF(pValue);
+        }
+        Py_DECREF(pArgs);
+        Py_DECREF(pFunc);
+    }
+
+
+
     //PYTHON -> 카메라 사진 찍고 대조
     
     int db = 0;     //DB 조회 결과
@@ -256,13 +275,33 @@ void *entrance(void *data){
         error_handling("[Entrance Server] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
-    //DB -> 모션센서 결과에 따라 학생 입장 결과 로그
-    servo(0);
+    // DB -> 모션센서 결과에 따라 학생 입장 결과 로그
+    pFunc = PyObject_GetAttrString(pModule, "entry_log_insert");
+    if (pFunc && PyCallable_Check(pFunc)) {
+        PyObject *pArgs = PyTuple_Pack(1, PyLong_FromLong(std_id)); // std_id는 적절히 설정해야 함
+        PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
+        if (pValue != NULL) {
+            Py_DECREF(pValue);
+        }
+        Py_DECREF(pArgs);
+        Py_DECREF(pFunc);
+    }    servo(0);
 
     int entered = msg[0];
     if (!entered){
       int seat = 0;
-      //DB -> 해당 rfid 학생에 대해 예약된 좌석이 있는지 확인
+    // DB -> 해당 RFID로 예약된 좌석 있는지 확인
+      PyObject *pFunc = PyObject_GetAttrString(pModule, "check_reservation");
+      if (pFunc && PyCallable_Check(pFunc)) {
+          PyObject *pArgs = PyTuple_Pack(1, PyUnicode_DecodeFSDefault(rfid));
+          PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
+          if (pValue != NULL) {
+              isValid = PyLong_AsLong(pValue);
+              Py_DECREF(pValue);
+          }
+          Py_DECREF(pArgs);
+          Py_DECREF(pFunc);
+      }      
       if (seat){
         char cancel_msg[2];
         snprintf(cancel_msg, 2, "%d0", seat);
@@ -351,7 +390,6 @@ void *watching(void *data){
     seat = msg[0];
     printf("msg: %s", msg);
 
-    //DB -> 해당 좌석에 대해 count 정보 받아와서 count 변수에 저장, 증가 후 update
 
     if (count >= 3){
       snprintf(msg, 2, "%d0", seat);
@@ -369,6 +407,22 @@ void *watching(void *data){
 
 
 int main(int argc, char *argv[]) {
+
+  //python.h 초기화
+  Py_Initialize();
+  PyObject *pName = PyUnicode_DecodeFSDefault("database");
+  PyObject *pModule = PyImport_Import(pName);
+  Py_DECREF(pName);
+
+  if (pModule == NULL) {
+      PyErr_Print();
+      fprintf(stderr, "Failed to load \"database\"\n");
+      return 1;
+  }
+
+
+
+
   int state = 1;
   int prev_state = 1;
 
