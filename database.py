@@ -234,5 +234,5 @@ def zero_count(rfid):
 
 if __name__ == "__main__":
     # 데이터베이스 연결 (파일 없으면 생성)
-    make_db()
+    #make_db()
     find_face_path("027812690245") # [('brown.jpg',)]
