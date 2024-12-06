@@ -1,6 +1,8 @@
 #include <Python.h>
 
-int call_python_function(const char *python_name, const char *python_function, const char *parameter) {
+#include <Python.h>
+
+int call_python_function(const char *python_name, const char *python_function, const char *parameter1, const char *parameter2) {
     // Python 인터프리터 초기화
     Py_Initialize();
 
@@ -25,10 +27,10 @@ int call_python_function(const char *python_name, const char *python_function, c
         return -1;  // 함수 가져오기 실패
     }
 
-    // 인자가 없으면 빈 튜플을 준비
+    // 파라미터가 하나일 경우
     PyObject *pArgs;
-    if (parameter != NULL) {
-        pArgs = PyTuple_Pack(1, PyUnicode_DecodeFSDefault(parameter));  // 하나의 인자 전달
+    if (parameter1 != NULL && parameter2 == NULL) {
+        pArgs = PyTuple_Pack(1, PyUnicode_DecodeFSDefault(parameter1));  // 하나의 인자 전달
         if (pArgs == NULL) {
             PyErr_Print();
             Py_DECREF(pFunc);
@@ -36,7 +38,20 @@ int call_python_function(const char *python_name, const char *python_function, c
             Py_Finalize();
             return -1;  // 인자 패킹 실패
         }
-    } else {
+    }
+    // 파라미터가 둘일 경우
+    else if (parameter1 != NULL && parameter2 != NULL) {
+        pArgs = PyTuple_Pack(2, PyUnicode_DecodeFSDefault(parameter1), PyUnicode_DecodeFSDefault(parameter2));  // 두 개의 인자 전달
+        if (pArgs == NULL) {
+            PyErr_Print();
+            Py_DECREF(pFunc);
+            Py_DECREF(pModule);
+            Py_Finalize();
+            return -1;  // 인자 패킹 실패
+        }
+    }
+    // 인자가 없을 경우
+    else {
         pArgs = PyTuple_New(0);  // 인자가 없을 경우 빈 튜플
         if (pArgs == NULL) {
             PyErr_Print();
@@ -79,7 +94,6 @@ int call_python_function(const char *python_name, const char *python_function, c
     // Python 인터프리터 종료
     Py_Finalize();
 
-    printf("%d", result);
     return result;  // 반환값
 }
 
@@ -133,6 +147,7 @@ int call_lcd(const char *parameter1, const char *parameter2) {
 
 
 int main() {
-    //call_python_function("database","make_db", NULL );
-    call_lcd("ajou", "library");
+    int result = call_python_function("lcd","lcd_execute", "ajou", "library" );
+    printf("%d", result);
+    //call_lcd("ajou", "library");
 }

@@ -9,3 +9,5 @@ def lcd_execute(str1, str2):
     mylcd.lcd_clear() 
     time.sleep(1) 
     mylcd.backlight(0)
+
+    return 0
