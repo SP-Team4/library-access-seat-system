@@ -12,8 +12,6 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
-
-
 // #define BUF_SIZE 1024
 
 #define BUFFER_MAX 3
@@ -29,6 +27,148 @@
 
 // #define PIN 20
 // #define POUT 21
+
+
+//--------Python 코드 
+
+
+int call_python_function(const char *python_name, const char *python_function, const char *parameter1, const char *parameter2) {
+    // Python 인터프리터 초기화
+    Py_Initialize();
+
+    // sys.path에 현재 디렉터리 추가
+    PyObject *sys_path = PySys_GetObject("path");
+    PyList_Append(sys_path, PyUnicode_DecodeFSDefault("."));
+
+    // Python 모듈 로드
+    PyObject *pModule = PyImport_ImportModule(python_name);
+    if (pModule == NULL) {
+        PyErr_Print();
+        Py_Finalize();
+        return -1;  // 모듈 로드 실패
+    }
+
+    // Python 함수 가져오기
+    PyObject *pFunc = PyObject_GetAttrString(pModule, python_function);
+    if (pFunc == NULL || !PyCallable_Check(pFunc)) {
+        PyErr_Print();
+        Py_DECREF(pModule);
+        Py_Finalize();
+        return -1;  // 함수 가져오기 실패
+    }
+
+    // 파라미터가 하나일 경우
+    PyObject *pArgs;
+    if (parameter1 != NULL && parameter2 == NULL) {
+        pArgs = PyTuple_Pack(1, PyUnicode_DecodeFSDefault(parameter1));  // 하나의 인자 전달
+        if (pArgs == NULL) {
+            PyErr_Print();
+            Py_DECREF(pFunc);
+            Py_DECREF(pModule);
+            Py_Finalize();
+            return -1;  // 인자 패킹 실패
+        }
+    }
+    // 파라미터가 둘일 경우
+    else if (parameter1 != NULL && parameter2 != NULL) {
+        pArgs = PyTuple_Pack(2, PyUnicode_DecodeFSDefault(parameter1), PyUnicode_DecodeFSDefault(parameter2));  // 두 개의 인자 전달
+        if (pArgs == NULL) {
+            PyErr_Print();
+            Py_DECREF(pFunc);
+            Py_DECREF(pModule);
+            Py_Finalize();
+            return -1;  // 인자 패킹 실패
+        }
+    }
+    // 인자가 없을 경우
+    else {
+        pArgs = PyTuple_New(0);  // 인자가 없을 경우 빈 튜플
+        if (pArgs == NULL) {
+            PyErr_Print();
+            Py_DECREF(pFunc);
+            Py_DECREF(pModule);
+            Py_Finalize();
+            return -1;  // 빈 튜플 생성 실패
+        }
+    }
+
+    // 함수 호출
+    PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
+    if (pValue == NULL) {
+        PyErr_Print();
+        Py_DECREF(pArgs);
+        Py_DECREF(pFunc);
+        Py_DECREF(pModule);
+        Py_Finalize();
+        return -1;  // 함수 호출 실패
+    }
+
+    // 반환값을 C의 int로 변환
+    int result = (int)PyLong_AsLong(pValue);
+    if (PyErr_Occurred()) {
+        PyErr_Print();
+        Py_DECREF(pValue);
+        Py_DECREF(pArgs);
+        Py_DECREF(pFunc);
+        Py_DECREF(pModule);
+        Py_Finalize();
+        return -1;  // 변환 오류
+    }
+
+    // 메모리 해제
+    Py_DECREF(pValue);
+    Py_DECREF(pArgs);
+    Py_DECREF(pFunc);
+    Py_DECREF(pModule);
+
+    // Python 인터프리터 종료
+    Py_Finalize();
+
+    return result;  // 반환값
+}
+
+
+
+int call_lcd(const char *parameter1, const char *parameter2) {
+    // lcd.py 모듈 불러오기
+    PyObject *lcdModuleName = PyUnicode_DecodeFSDefault("lcd");
+    PyObject *lcdModule = PyImport_Import(lcdModuleName);
+    Py_DECREF(lcdModuleName);
+
+    if (lcdModule != NULL) {
+        // lcd_execute() 함수 실행
+        PyObject *lcdFunc = PyObject_GetAttrString(lcdModule, "lcd_execute");
+        if (lcdFunc && PyCallable_Check(lcdFunc)) {
+            // 인자 생성
+            PyObject *args = PyTuple_Pack(2, PyUnicode_DecodeFSDefault(parameter1), PyUnicode_DecodeFSDefault(parameter2));
+            if (args != NULL) {
+                PyObject *pValue = PyObject_CallObject(lcdFunc, args);
+                Py_DECREF(args);
+
+                if (pValue != NULL) {
+                    printf("lcd_execute() 실행 성공\n");
+                    Py_DECREF(pValue);
+                } else {
+                    PyErr_Print();
+                    fprintf(stderr, "lcd_execute() 실행 중 오류 발생\n");
+                }
+            }
+        } else {
+            if (PyErr_Occurred()) PyErr_Print();
+            fprintf(stderr, "lcd_execute()를 찾을 수 없거나 호출할 수 없습니다\n");
+        }
+        Py_XDECREF(lcdFunc);
+        Py_DECREF(lcdModule);
+    } else {
+        PyErr_Print();
+        fprintf(stderr, "lcd.py를 불러올 수 없습니다\n");
+    }
+
+    Py_Finalize();
+    return 1;
+}
+
+
 
 typedef struct {
   int std_id[10]; //학번
@@ -196,31 +336,29 @@ void *servo(void *data){  //얘를 스레드 함수로 둬야할지 아니면 �
 void servo(int open){ 
     PWMExport(PWM);
     PWMWritePeriod(PWM, 5000000);
-    PWMWriteDutyCycle(PWM, (open?0:300*10000));
+    PWMWriteDutyCycle(PWM, (open?0:30*100000));
     PWMEnable(PWM);
 
-    printf("Gate open\n");
 
     if (open){
-      for (int i = 0; i < 300; i++) {
-        PWMWriteDutyCycle(PWM, i * 10000);
+      printf("Gate open\n");
+      for (int i = 0; i < 30; i++) {
+        PWMWriteDutyCycle(PWM, i * 100000);
         usleep(10000);
       }
     }
-    else{
-      for (int i = 300; i > 0; i++) {
-        PWMWriteDutyCycle(PWM, i * 10000);
-        usleep(10000);
-      } 
-    }
+      else{
+        printf("Gate close\n");
+        for (int i = 30; i > 0; i++) {
+          PWMWriteDutyCycle(PWM, i * 100000);
+          usleep(10000);
+        } 
+      }
 }
 
 void *entrance(void *data){
   char msg[14];       //출입관리 서버와 통신 [0-11]rfid, [12]valid, [13]NULL
   memset(&msg, 0, sizeof(msg));
-
-  char connect_msg[] = "Entrance client socket\n";
-  write(clnt_sock_entrance, connect_msg, sizeof(connect_msg));
 
   //STUDENT_DATA std;
 
@@ -229,7 +367,7 @@ void *entrance(void *data){
     memset(&rfid, 0, sizeof(rfid));
 
     for (int i=0; i<12; i++){
-      if (read(clnt_sock_entrance, msg[i], sizeof(char)) == -1) 
+      if (read(clnt_sock_entrance, &msg[i], sizeof(char)) == -1) 
         error_handling("[Entrance Server] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
@@ -237,26 +375,16 @@ void *entrance(void *data){
 
     printf("[Entrance Server] Received RFID tag: %s \n", rfid);
     // DB -> 해당 ID로 확인되는 user 있는지 찾기
-    PyObject *pFunc = PyObject_GetAttrString(pModule, "find_face_path");
-    if (pFunc && PyCallable_Check(pFunc)) {
-        PyObject *pArgs = PyTuple_Pack(1, PyUnicode_DecodeFSDefault(rfid));
-        PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
-        if (pValue != NULL) {
-            char *face_path = PyUnicode_AsUTF8(pValue);
-            printf("Face path: %s\n", face_path);
-            db = 1; // 사용자 찾음
-            Py_DECREF(pValue);
-        }
-        Py_DECREF(pArgs);
-        Py_DECREF(pFunc);
-    }
-
 
 
     //PYTHON -> 카메라 사진 찍고 대조
-    
+
+
+
     int db = 0;     //DB 조회 결과
     int camera = 0; //카메라 조회 결과
+    int camera = call_python_function("database","find_face_path", rfid , NULL);
+
     strncpy(msg, rfid, 12);
     
     if (!camera || !db ){
@@ -273,42 +401,28 @@ void *entrance(void *data){
     servo(1);
     //모션센서 결과 받기
     for (int i=0; i<13; i++){
-      if (read(clnt_sock_entrance, msg[i], sizeof(char)) == -1) 
+      if (read(clnt_sock_entrance, &msg[i], sizeof(char)) == -1) 
         error_handling("[Entrance Server] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
     // DB -> 모션센서 결과에 따라 학생 입장 결과 로그
-    pFunc = PyObject_GetAttrString(pModule, "entry_log_insert");
-    if (pFunc && PyCallable_Check(pFunc)) {
-        PyObject *pArgs = PyTuple_Pack(1, PyLong_FromLong(std_id)); // std_id는 적절히 설정해야 함
-        PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
-        if (pValue != NULL) {
-            Py_DECREF(pValue);
-        }
-        Py_DECREF(pArgs);
-        Py_DECREF(pFunc);
-    }    servo(0);
+    call_python_function("database", "entry_log_insert", rfid, NULL);
+
+    servo(0);
 
     int entered = msg[0];
     if (!entered){
       int seat = 0;
     // DB -> 해당 RFID로 예약된 좌석 있는지 확인
-      PyObject *pFunc = PyObject_GetAttrString(pModule, "check_reservation");
-      if (pFunc && PyCallable_Check(pFunc)) {
-          PyObject *pArgs = PyTuple_Pack(1, PyUnicode_DecodeFSDefault(rfid));
-          PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
-          if (pValue != NULL) {
-              isValid = PyLong_AsLong(pValue);
-              Py_DECREF(pValue);
-          }
-          Py_DECREF(pArgs);
-          Py_DECREF(pFunc);
-      }      
+    seat = call_python_function("database", "check_reservation", rfid, NULL);
+
       if (seat){
         char cancel_msg[2];
         snprintf(cancel_msg, 2, "%d0", seat);
         write(clnt_sock_seat_reserv, cancel_msg, sizeof(cancel_msg));
         //DB -> 해당 rfid 학생에 대해 좌석 취소
+        call_python_function("database", "delete_reservation", rfid, NULL);
+
       }
     }
     printf("end of entrance function");
@@ -326,7 +440,7 @@ void *reservation(void *data){
 
   while(1){
     for (int i=0; i<12; i++){
-      if (read(clnt_sock_seat_reserv, msg[i], sizeof(char)) == -1) 
+      if (read(clnt_sock_seat_reserv, &msg[i], sizeof(char)) == -1) 
         error_handling("[Seat Reservation] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
@@ -334,6 +448,8 @@ void *reservation(void *data){
 
     int isValid = 0;
     //DB -> 해당 RFID로 예약된 좌석 있는지 확인 (있으면 1)
+    isValid = call_python_function("database", "check_reservation", rfid, NULL);
+
     if (isValid){
       //예약된 좌석이 있으면
       snprintf(msg, 13, "%s0", rfid);
@@ -341,21 +457,23 @@ void *reservation(void *data){
       continue;
     }
 
-    int seat_list = [];
+    int seat_list[4];
     //DB -> 예약 가능한 좌석 목록 받기 (또는 서버에 저장하고 있어도 됨..)
+    seat_list = call_python_function("database", "get_available_seats", rfid, NULL);
 
-    char seat_msg[];
-    sprintf(seat_msg, 
-    "
-    Available Seats: 
 
-    ┼┬┬┬┼┬┬┬┼┬┬┬┼┬┬┬┼
-    ┼ %d ┼ %d ┼ %d ┼ %d ┼
-    ┼┴┴┴┼┴┴┴┼┴┴┴┼┴┴┴┼
-    ", 1, 2, 3, 4);
+    char seat_msg[1024] = {0};
+    // sprintf(seat_msg, 
+    // "
+    // Available Seats: 
+
+    // ┼┬┬┬┼┬┬┬┼┬┬┬┼┬┬┬┼
+    // ┼ %d ┼ %d ┼ %d ┼ %d ┼
+    // ┼┴┴┴┼┴┴┴┼┴┴┴┼┴┴┴┼
+    // ", 1, 2, 3, 4);
 
     for (int i=0; i<12; i++){
-      if (read(clnt_sock_seat_reserv, msg[i], sizeof(char)) == -1) 
+      if (read(clnt_sock_seat_reserv, &msg[i], sizeof(char)) == -1) 
         error_handling("[Seat Reservation] Unable to read\n");
       //strncpy(rfid[i], msg[0], 1);
     }
@@ -363,6 +481,8 @@ void *reservation(void *data){
     int seat = msg[0];
 
     //DB -> RFID, seat으로 좌석 예약 진행
+    call_python_function("database", "reserve_seat", rfid, seat);
+
     snprintf(msg, 2, "%s1", seat);
     write(clnt_sock_seat_reserv, msg, sizeof(msg));
     //LED 출력 변경
@@ -377,9 +497,6 @@ void *reservation(void *data){
 void *watching(void *data){
   int isValid = 0;
 
-  char connect_msg[] = "Seat watching client socket";
-  write(clnt_sock_entrance, connect_msg, sizeof(msg));
-
   char msg[3];       //좌석감시 서버와 통신 [0]좌석번호, [1]valid, [2]NULL
   memset(&msg, 0, sizeof(msg));
 
@@ -388,7 +505,7 @@ void *watching(void *data){
     int seat = 0;
 
     for (int i=0; i<2; i++){
-      if (read(clnt_sock_seat_watch, msg[i], sizeof(char)) == -1) 
+      if (read(clnt_sock_seat_watch, &msg[i], sizeof(char)) == -1) 
         error_handling("[Seat Watching] Unable to read \n");
       //strncpy(rfid[i], msg[0], 1);
     }
@@ -397,36 +514,31 @@ void *watching(void *data){
 
 
     if (count >= 3){
+      call_python_function("database", "increase_count", rfid, NULL);
+
       snprintf(msg, 2, "%d0", seat);
       write(clnt_sock_seat_watch, msg, sizeof(msg));
       //DB -> 좌석 예약 취소 처리
+
     }
     else{
       snprintf(msg, 2, "%d1", seat);
       write(clnt_sock_seat_watch, msg, sizeof(msg));
       //DB -> 해당 좌석 count 0으로 초기화
+      call_python_function("database", "zero_count", rfid, NULL);
+
     }
   }
 }
 
 
 
+
 int main(int argc, char *argv[]) {
 
-  //python.h 초기화
-  Py_Initialize();
-  PyObject *pName = PyUnicode_DecodeFSDefault("database");
-  PyObject *pModule = PyImport_Import(pName);
-  Py_DECREF(pName);
 
-  if (pModule == NULL) {
-      PyErr_Print();
-      fprintf(stderr, "Failed to load \"database\"\n");
-      return 1;
-  }
-
-
-
+  call_python_function("database","make_db", NULL, NULL );
+  call_lcd("ajou", "library");
 
   int state = 1;
   int prev_state = 1;
@@ -488,18 +600,18 @@ int main(int argc, char *argv[]) {
     printf("Seat watching client:  Connection established\n");
   }
 
-  printf("                                                                                                                                                                                                                                                                                                                                                                                                                  
-####    ##  ###                              ### #                                     
- ##     ##   ##                             ##  ##               #                     
- ##          ##                             ##   #              ##                     
- ##    ###   ## ##  ## # ###  ## # ### ##   ####   ### ##  ### ####  ###  ## ##  ##    
- ##     ##   ### ## ####   ## ####  ## #      ####  ## #  ##    ##  ## ## ### ### ##   
- ##  #  ##   ##  ## ##    ### ##    ## #    #   ##  ## #  ####  ##  ##### ##  ##  ##   
- ##  #  ##   ##  ## ##   # ## ##     ##     ##  ##   ##     ##  ##  ##    ##  ##  ##   
-###### ####  # ###  ##   #### ##     ##     # ###    ##   ###    ##  #### ##  ##  ##   
-                                   ###             ###                                 
-                                   ##              ##                                  
-  ");
+                                                                                                                                                                                                                                                                                                                                                                                                                 
+  printf(" ####    ##  ###                              ### #                                     \n");
+  printf(" ##     ##   ##                             ##  ##               #                      \n");
+  printf(" ##          ##                             ##   #              ##                      \n");
+  printf(" ##    ###   ## ##  ## # ###  ## # ### ##   ####   ### ##  ### ####  ###  ## ##  ##     \n");
+  printf(" ##     ##   ### ## ####   ## ####  ## #      ####  ## #  ##    ##  ## ## ### ### ##    \n");
+  printf(" ##  #  ##   ##  ## ##    ### ##    ## #    #   ##  ## #  ####  ##  ##### ##  ##  ##    \n");
+  printf(" ##  #  ##   ##  ## ##   # ## ##     ##     ##  ##   ##     ##  ##  ##    ##  ##  ##    \n");
+  printf(" ###### ####  # ###  ##   #### ##     ##     # ###    ##   ###    ##  #### ##  ##  ##   \n");
+  printf("                                    ###             ###                                 \n");
+  printf("                                    ##              ##                                  \n");
+  
     
   pthread_create(&entrance_thread, NULL, entrance, (void *)data);
   pthread_create(&seat_watch_thread, NULL, reservation, (void *)data);    

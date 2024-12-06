@@ -71,6 +71,8 @@ def make_db():
     # 연결 종료
     conn.close()
 
+    return 1
+
 def find_face_path(rfid):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
@@ -96,6 +98,8 @@ def entry_log_insert(student_id):
     conn.commit()
     conn.close()
 
+    return 1
+
 def check_reservation(rfid):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
@@ -119,6 +123,45 @@ def check_reservation(rfid):
 
     # 예약 중이면 1, 아니면 0 반환
     return 1 if reservation else 0
+
+    conn.close()
+    
+    return 1
+
+def reserve_seat(rfid, seat_id):
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+
+    # student_id를 rfid로부터 찾기
+    query = """
+    SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?;
+    """
+    cursor.execute(query, (rfid,))
+    student = cursor.fetchone()
+
+    if student:
+        student_id = student[0]
+
+        # SEAT_RESERVATION_LOG 테이블에 예약 로그 삽입
+        query = """
+        INSERT INTO SEAT_RESERVATION_LOG (student_id, seat_id, status, start_time)
+        VALUES (?, ?, 1, CURRENT_TIMESTAMP);
+        """
+        cursor.execute(query, (student_id, seat_id))
+
+        # SEAT 테이블에서 해당 좌석의 예약 상태를 1로 업데이트
+        query = """
+        UPDATE SEAT
+        SET is_reserved = 1
+        WHERE seat_id = ?;
+        """
+        cursor.execute(query, (seat_id,))
+
+        # 커밋 후 연결 종료
+        conn.commit()
+        print(f"좌석 {seat_id} 예약이 완료되었습니다.")
+    else:
+        print("해당 RFID에 해당하는 학생이 존재하지 않습니다.")
 
     conn.close()
 
@@ -167,11 +210,28 @@ def delete_reservation(rfid):
 
     # 변경사항 저장
     conn.commit()
+    conn.close()
+
     print(f"예약이 성공적으로 취소되었습니다. 좌석 {seat_id}이 초기화되었습니다.")
     return 1  # 취소 성공
 
-    conn.commit()
+def get_available_seats():
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+
+    query = """
+    SELECT status 
+    FROM SEAT
+    """
+    cursor.execute(query)
+    result = cursor.fetchall()
+
+    # 결과를 seat_list로 변환
+    seat_list = [row[0] for row in result]
+
     conn.close()
+    return seat_list
+
 
 def increase_count(rfid): 
     conn = sqlite3.connect("database.db")
@@ -207,6 +267,8 @@ def increase_count(rfid):
 
     if updated_count and updated_count[0] >= 3:
         delete_reservation(rfid)
+    
+    return 1
 
 def zero_count(rfid):
     conn = sqlite3.connect("database.db")
@@ -231,6 +293,8 @@ def zero_count(rfid):
     # 변경사항 저장
     conn.commit()
     conn.close()
+
+    return 1
 
 if __name__ == "__main__":
     # 데이터베이스 연결 (파일 없으면 생성)
