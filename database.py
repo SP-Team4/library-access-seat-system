@@ -173,40 +173,57 @@ def delete_reservation(rfid):
     conn.commit()
     conn.close()
 
-def increase_count(rfid): 
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
+def increase_count(seat_id):
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
 
-    # 1. RFID로 MEMBER 테이블에서 student_id 가져오기
-    cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
-    result = cursor.fetchone()
-    if not result:
-        return 0  # RFID가 등록되지 않은 경우 예약 중 아님
-    student_id = result[0]
-    
-    # 2. count 증가시키기
-    cursor.execute("""
-        UPDATE SEAT_RESERVATION_LOG
-        SET count = count + 1
-        WHERE student_id = ?
-          AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
-    """, (student_id,))
+        # 1. SEAT_RESERVATION_LOG 테이블에서 seat_id와 연결된 student_id 가져오기
+        cursor.execute("""
+            SELECT student_id 
+            FROM SEAT_RESERVATION_LOG
+            WHERE seat_id = ?
+              AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
+        """, (seat_id,))
+        result = cursor.fetchone()
         
-    # 3. 증가된 count 값 가져오기
-    cursor.execute("""
-        SELECT count
-        FROM SEAT_RESERVATION_LOG
-        WHERE student_id = ?
-          AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
-    """, (student_id,))
-    updated_count = cursor.fetchone()
+        if not result:
+            return 0  # 해당 seat_id로 예약 중인 사용자가 없을 경우
+        
+        student_id = result[0]
+        
+        # 2. count 증가시키기
+        cursor.execute("""
+            UPDATE SEAT_RESERVATION_LOG
+            SET count = count + 1
+            WHERE student_id = ?
+              AND seat_id = ?
+              AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
+        """, (student_id, seat_id))
+            
+        # 3. 증가된 count 값 가져오기
+        cursor.execute("""
+            SELECT count
+            FROM SEAT_RESERVATION_LOG
+            WHERE student_id = ?
+              AND seat_id = ?
+              AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
+        """, (student_id, seat_id))
+        updated_count = cursor.fetchone()
 
-    # 변경사항 저장
-    conn.commit()
-    conn.close()
+        # 변경사항 저장
+        conn.commit()
 
-    if updated_count and updated_count[0] >= 3:
-        delete_reservation(rfid)
+        # 4. count 값이 3 이상인 경우 예약 취소
+        if updated_count and updated_count[0] >= 3:
+            delete_reservation_by_seat(seat_id)
+                    
+        return 1
+    except sqlite3.Error as e:
+        print(f"Error: {e}")
+        return 0
+    finally:
+        conn.close()
 
 def zero_count(rfid):
     conn = sqlite3.connect("database.db")
