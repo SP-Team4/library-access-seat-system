@@ -3,73 +3,86 @@ import camera
 from datetime import datetime
 
 def make_db():
-    # 데이터베이스 연결 (없으면 새로 생성)
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
+    try:
+        # 데이터베이스 연결 (없으면 새로 생성)
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
 
-    # MEMBER 테이블 생성
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS MEMBER (
-        student_id INTEGER PRIMARY KEY,
-        name TEXT,
-        rfid_tag_id TEXT UNIQUE,
-        student_face TEXT
-    );
-    """)
 
-    # ENTRY_LOG 테이블 생성
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS ENTRY_LOG (
-        entry_log_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        student_id INTEGER,
-        entry_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-        exit_time DATETIME,
-        FOREIGN KEY (student_id) REFERENCES MEMBER(student_id)
-    );
-    """)
+        # MEMBER 테이블 생성
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MEMBER (
+            student_id INTEGER PRIMARY KEY,
+            name TEXT,
+            rfid_tag_id TEXT UNIQUE,
+            student_face TEXT
+        );
+        """)
 
-    # SEAT 테이블 생성
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS SEAT (
-        seat_id INTEGER PRIMARY KEY,
-        status INTEGER DEFAULT 0 -- 예약 여부 (0: 예약 안됨, 1: 예약됨)
-    );
-    """)
+        # ENTRY_LOG 테이블 생성
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ENTRY_LOG (
+            entry_log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
+            entry_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+            exit_time DATETIME,
+            FOREIGN KEY (student_id) REFERENCES MEMBER(student_id)
+        );
+        """)
 
-    # SEAT_RESERVATION_LOG 테이블 생성
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS SEAT_RESERVATION_LOG (
-        reservation_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        student_id INTEGER,
-        seat_id INTEGER,
-        start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-        end_time DATETIME,
-        FOREIGN KEY (student_id) REFERENCES MEMBER(student_id),
-        FOREIGN KEY (seat_id) REFERENCES SEAT(seat_id)
-    );
-    """)
+        # SEAT 테이블 생성
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS SEAT (
+            seat_id INTEGER PRIMARY KEY,
+            status INTEGER DEFAULT 0 -- 예약 여부 (0: 예약 안됨, 1: 예약됨)
+        );
+        """)
 
-    # MEMBER 테이블에 데이터 삽입
-    cursor.execute("""
-    INSERT INTO MEMBER (student_id, name, rfid_tag_id, student_face)
-    VALUES
-        ('20210001', 'Brown', '027812690245', 'brown.jpg'),
-        ('20210002', 'Oreo', '729441154526', 'oreo.jpg');
-    """)
+        # SEAT_RESERVATION_LOG 테이블 생성
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS SEAT_RESERVATION_LOG (
+            reservation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
+            seat_id INTEGER,
+            start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+            end_time DATETIME,
+            FOREIGN KEY (student_id) REFERENCES MEMBER(student_id),
+            FOREIGN KEY (seat_id) REFERENCES SEAT(seat_id)
+        );
+        """)
 
-    # SEAT 테이블에 데이터 삽입
-    cursor.execute("""
-    INSERT INTO SEAT (seat_id)
-    VALUES
-        (1), (2), (3), (4);
-    """)
+        # 테이블 데이터 초기화 (내용 삭제)
+        cursor.execute("DELETE FROM SEAT_RESERVATION_LOG;")
+        cursor.execute("DELETE FROM ENTRY_LOG;")
+        cursor.execute("DELETE FROM SEAT;")
+        cursor.execute("DELETE FROM MEMBER;")
 
-    # 변경사항 저장
-    conn.commit()
-    print("모든 테이블이 성공적으로 생성되었습니다.")
+        # MEMBER 테이블에 데이터 삽입
+        cursor.execute("""
+        INSERT INTO MEMBER (student_id, name, rfid_tag_id, student_face)
+        VALUES
+            ('20210001', 'Brown', '027812690245', 'brown.jpg'),
+            ('20210002', 'Oreo', '729441154526', 'oreo.jpg');
+        """)
+
+        # SEAT 테이블에 데이터 삽입
+        cursor.execute("""
+        INSERT INTO SEAT (seat_id)
+        VALUES
+            (1), (2), (3), (4);
+        """)
+
+        # 변경사항 저장
+        conn.commit()
+        print("모든 테이블이 성공적으로 생성되었습니다.")
+        return 1
+
+    except sqlite3.Error as e:
+        print(f"Error: {e}")  # 에러를 로그에 출력
+        return 0  # 실패 시 0 반환
     
-    # 연결 종료
-    conn.close()
+    finally:
+        conn.close()
 
 def find_face_path(rfid):
     conn = sqlite3.connect("database.db")
@@ -85,95 +98,182 @@ def find_face_path(rfid):
     return result
 
 def entry_log_insert(student_id):
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
 
-    query = """
-    INSERT INTO ENTRY_LOG (student_id)
-    VALUES (?);
-    """
-    cursor.execute(query, (student_id,))
-    conn.commit()
-    conn.close()
+        query = """
+        INSERT INTO ENTRY_LOG (student_id)
+        VALUES (?);
+        """
+        cursor.execute(query, (student_id,))
+        conn.commit()
+        return 1
 
-def check_reservation(rfid):
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    
-    # 1. RFID로 MEMBER 테이블에서 student_id 가져오기
-    cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
-    result = cursor.fetchone()
-    if not result:
-        return 0  # RFID가 등록되지 않은 경우 예약 중 아님
-    student_id = result[0]
+    except sqlite3.Error as e:
+        print(f"Error: {e}")  # 에러를 로그에 출력
+        return 0  # 실패 시 0 반환
 
-    # 2. SEAT_RESERVATION_LOG에서 현재 예약 상태 확인
-    current_time = datetime.now()
-    cursor.execute("""
-        SELECT 1 
-        FROM SEAT_RESERVATION_LOG
-        WHERE student_id = ?
-          AND (end_time IS NULL OR end_time > ?)
-    """, (student_id, current_time))
-    reservation = cursor.fetchone()
+    finally:
+        conn.close()
 
-    # 예약 중이면 1, 아니면 0 반환
-    return 1 if reservation else 0
 
-    conn.close()
+def check_reservation(rfid):    
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        
+        # 1. RFID로 MEMBER 테이블에서 student_id 가져오기
+        cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
+        result = cursor.fetchone()
+        if not result:
+            return 0  # RFID가 등록되지 않은 경우 예약 중 아님
+        student_id = result[0]
+
+        # 2. SEAT_RESERVATION_LOG에서 현재 예약 상태 확인
+        current_time = datetime.now()
+        cursor.execute("""
+            SELECT 1 
+            FROM SEAT_RESERVATION_LOG
+            WHERE student_id = ?
+            AND (end_time IS NULL OR end_time > ?)
+        """, (student_id, current_time))
+        reservation = cursor.fetchone()
+
+        # 예약 중이면 1, 아니면 0 반환
+        return 1 if reservation else 0
+
+    except sqlite3.Error as e:
+        print(f"Error: {e}")  # 에러를 로그에 출력
+        return 0  # 실패 시 0 반환
+    finally:
+        conn.close()
+
+
+
+
+def reserve_seat(rfid, seat_id):
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+
+        # student_id를 rfid로부터 찾기
+        query = """
+        SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?;
+        """
+        cursor.execute(query, (rfid,))
+        student = cursor.fetchone()
+
+        if student:
+            student_id = student[0]
+
+            # SEAT_RESERVATION_LOG 테이블에 예약 로그 삽입
+            query = """
+            INSERT INTO SEAT_RESERVATION_LOG (student_id, seat_id, status, start_time)
+            VALUES (?, ?, 1, CURRENT_TIMESTAMP);
+            """
+            cursor.execute(query, (student_id, seat_id))
+
+            # SEAT 테이블에서 해당 좌석의 예약 상태를 1로 업데이트
+            query = """
+            UPDATE SEAT
+            SET is_reserved = 1
+            WHERE seat_id = ?;
+            """
+            cursor.execute(query, (seat_id,))
+
+            # 커밋 후 연결 종료
+            conn.commit()
+            print(f"좌석 {seat_id} 예약이 완료되었습니다.")
+            return 1
+        else:
+            print("해당 RFID에 해당하는 학생이 존재하지 않습니다.")
+            return 0
+    except sqlite3.Error as e:
+        print(f"Error: {e}")
+        return 0
+    finally:
+        conn.close()
+
 
 def delete_reservation(rfid):
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    
-    # 1. RFID로 student_id 가져오기
-    cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
-    result = cursor.fetchone()
-    if not result:
-        print("해당 RFID에 해당하는 학생이 없습니다.")
-        return 0  # 취소 실패
-    student_id = result[0]
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        
+        # 1. RFID로 student_id 가져오기
+        cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
+        result = cursor.fetchone()
+        if not result:
+            print("해당 RFID에 해당하는 학생이 없습니다.")
+            return 0
+        student_id = result[0]
 
-    # 2. 현재 활성화된 예약 가져오기
-    cursor.execute("""
-        SELECT seat_id 
-        FROM SEAT_RESERVATION_LOG
-        WHERE student_id = ?
-          AND (end_time IS NULL OR end_time > ?)
-    """, (student_id, datetime.now()))
-    reservation = cursor.fetchone()
+        # 2. 현재 활성화된 예약 가져오기
+        cursor.execute("""
+            SELECT seat_id 
+            FROM SEAT_RESERVATION_LOG
+            WHERE student_id = ?
+              AND (end_time IS NULL OR end_time > ?)
+        """, (student_id, datetime.now()))
+        reservation = cursor.fetchone()
 
-    if not reservation:
-        print("현재 활성화된 예약이 없습니다.")
-        return 0  # 취소 실패
-    seat_id = reservation[0]
+        if not reservation:
+            print("현재 활성화된 예약이 없습니다.")
+            return 0
+        seat_id = reservation[0]
 
-    # 3. SEAT_RESERVATION_LOG의 end_time 업데이트
-    current_time = datetime.now()
-    cursor.execute("""
-        UPDATE SEAT_RESERVATION_LOG
-        SET end_time = ?
-        WHERE student_id = ?
-          AND seat_id = ?
-          AND (end_time IS NULL OR end_time > ?)
-    """, (current_time, student_id, seat_id, current_time))
+        # 3. SEAT_RESERVATION_LOG의 end_time 업데이트
+        current_time = datetime.now()
+        cursor.execute("""
+            UPDATE SEAT_RESERVATION_LOG
+            SET end_time = ?
+            WHERE student_id = ?
+              AND seat_id = ?
+              AND (end_time IS NULL OR end_time > ?)
+        """, (current_time, student_id, seat_id, current_time))
 
-    # 4. SEAT 테이블의 status를 0으로 업데이트
-    cursor.execute("""
-        UPDATE SEAT
-        SET status = 0
-        WHERE seat_id = ?
-    """, (seat_id,))
+        # 4. SEAT 테이블의 status를 0으로 업데이트
+        cursor.execute("""
+            UPDATE SEAT
+            SET status = 0
+            WHERE seat_id = ?
+        """, (seat_id,))
 
-    # 변경사항 저장
-    conn.commit()
-    print(f"예약이 성공적으로 취소되었습니다. 좌석 {seat_id}이 초기화되었습니다.")
-    return 1  # 취소 성공
+        # 변경사항 저장
+        conn.commit()
+        print(f"예약이 성공적으로 취소되었습니다. 좌석 {seat_id}이 초기화되었습니다.")
+        return 1
+    except sqlite3.Error as e:
+        print(f"Error: {e}")
+        return 0
+    finally:
+        conn.close()
 
-    conn.commit()
-    conn.close()
 
-def increase_count(seat_id):
+def get_available_seats():
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+
+        query = """
+        SELECT status 
+        FROM SEAT
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+
+        # 결과를 seat_list로 변환하고 문자열로 변환
+        seat_string = ''.join(str(row[0]) for row in result)
+
+        conn.close()
+        return seat_string
+    except sqlite3.Error as e:
+        print(f"Error: {e}")
+        return "0"  # 오류 발생 시 "0" 문자열 반환
+
+
+def increase_count(rfid):
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
@@ -216,38 +316,46 @@ def increase_count(seat_id):
 
         # 4. count 값이 3 이상인 경우 예약 취소
         if updated_count and updated_count[0] >= 3:
-            delete_reservation_by_seat(seat_id)
-                    
+            delete_reservation_by_seat(seat_id)    
+
         return 1
+            
     except sqlite3.Error as e:
         print(f"Error: {e}")
         return 0
     finally:
         conn.close()
 
+
 def zero_count(rfid):
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
 
-    # 1. RFID로 student_id 가져오기
-    cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
-    result = cursor.fetchone()
-    if not result:
-        print("해당 RFID에 해당하는 학생이 없습니다.")
-        return None
-    student_id = result[0]
+        # 1. RFID로 student_id 가져오기
+        cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
+        result = cursor.fetchone()
+        if not result:
+            print("해당 RFID에 해당하는 학생이 없습니다.")
+            return 0
+        student_id = result[0]
 
-    # 2. count 값 0으로 업데이트
-    cursor.execute("""
-        UPDATE SEAT_RESERVATION_LOG
-        SET count = 0
-        WHERE student_id = ?
-          AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
-    """, (student_id,))
+        # 2. count 값 0으로 업데이트
+        cursor.execute("""
+            UPDATE SEAT_RESERVATION_LOG
+            SET count = 0
+            WHERE student_id = ?
+              AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
+        """, (student_id,))
 
-    # 변경사항 저장
-    conn.commit()
-    conn.close()
+        # 변경사항 저장
+        conn.commit()
+        return 1
+    except sqlite3.Error as e:
+        print(f"Error: {e}")
+        return 0
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     # 데이터베이스 연결 (파일 없으면 생성)
