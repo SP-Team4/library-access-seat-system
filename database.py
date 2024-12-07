@@ -226,11 +226,11 @@ def get_available_seats():
     cursor.execute(query)
     result = cursor.fetchall()
 
-    # 결과를 seat_list로 변환
-    seat_list = [row[0] for row in result]
+    # 결과를 seat_list로 변환하고 문자열로 변환
+    seat_string = ''.join(str(row[0]) for row in result)
 
     conn.close()
-    return seat_list
+    return seat_string
 
 
 def increase_count(rfid): 
