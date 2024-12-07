@@ -17,6 +17,7 @@
 #define BUFFER_MAX 3
 #define DIRECTION_MAX 256
 #define VALUE_MAX 256
+#define SEAT_NUM 4
 
 #define IN 0
 #define OUT 1
@@ -306,33 +307,6 @@ void error_handling(char *message) {
 
 /****** Thread Functions ******/
 
-/*
-void *servo(void *data){  //얘를 스레드 함수로 둬야할지 아니면 그냥 함수로 둘지...
-    PWMExport(PWM);
-    PWMWritePeriod(PWM, 5000000);
-    PWMWriteDutyCycle(PWM, 0);
-    PWMEnable(PWM);
-
-    printf("Gate open\n");
-
-    for (int i = 0; i < 300; i++) {
-      PWMWriteDutyCycle(PWM, i * 10000);
-      usleep(10000);
-    }
-
-    //모션센서 결과 수신하고 닫음
-    for (int i=0; i<13; i++){
-      if (read(clnt_sock_entrance, msg[i], sizeof(char)) == -1) 
-        error_handling("Unable to read from Entrance_Server\n");
-      //strncpy(rfid[i], msg[0], 1);
-    }
-
-    for (int i = 300; i > 0; i++) {
-      PWMWriteDutyCycle(PWM, i * 10000);
-      usleep(10000);
-    }  
-}*/
-
 void servo(int open){ 
     PWMExport(PWM);
     PWMWritePeriod(PWM, 5000000);
@@ -357,7 +331,7 @@ void servo(int open){
 }
 
 void *entrance(void *data){
-  char msg[14];       //출입관리 서버와 통신 [0-11]rfid, [12]valid, [13]NULL
+  char msg[15];       //출입관리 서버와 통신 [0-11]rfid, [12]valid, [13]1:entry 0:exit, [14]NULL
   memset(&msg, 0, sizeof(msg));
 
   //STUDENT_DATA std;
@@ -366,62 +340,58 @@ void *entrance(void *data){
     char rfid[12];
     memset(&rfid, 0, sizeof(rfid));
 
-    for (int i=0; i<12; i++){
-      if (read(clnt_sock_entrance, &msg[i], sizeof(char)) == -1) 
-        error_handling("[Entrance Server] Unable to read\n");
-      //strncpy(rfid[i], msg[0], 1);
-    }
+    if (read(clnt_sock_entrance, &msg, sizeof(char)*15) == -1) 
+      error_handling("[Entrance Server] Unable to read\n");
+
     strncpy(rfid, msg, 12);
 
     printf("[Entrance Server] Received RFID tag: %s \n", rfid);
     // DB -> 해당 ID로 확인되는 user 있는지 찾기
-
-
     //PYTHON -> 카메라 사진 찍고 대조
 
-
-
-    int db = 0;     //DB 조회 결과
-    int camera = 0; //카메라 조회 결과
-    int camera = call_python_function("database","find_face_path", rfid , NULL);
+    int valid = call_python_function("database","find_face_path", rfid , NULL);
+    
+    memset(&msg, 0, sizeof(msg));
 
     strncpy(msg, rfid, 12);
     
-    if (!camera || !db ){
+    if (!valid ){
       printf("[Entrance Server] Invalid user \n");
       msg[12] = '0';
-      write(clnt_sock_entrance, msg, sizeof(msg));
+      write(clnt_sock_entrance, msg, sizeof(char)*15);
       continue; 
     }
 
     printf("[Entrance Server] Welcome \n");
     msg[12] = '1';
-    write(clnt_sock_entrance, msg, sizeof(msg));
+    write(clnt_sock_entrance, msg, sizeof(char)*15);
 
     servo(1);
     //모션센서 결과 받기
-    for (int i=0; i<13; i++){
-      if (read(clnt_sock_entrance, &msg[i], sizeof(char)) == -1) 
-        error_handling("[Entrance Server] Unable to read\n");
-      //strncpy(rfid[i], msg[0], 1);
-    }
+    memset(&msg, 0, sizeof(msg));
+    if (read(clnt_sock_entrance, &msg, sizeof(char)*15) == -1) 
+      error_handling("[Entrance Server] Unable to read\n");
     // DB -> 모션센서 결과에 따라 학생 입장 결과 로그
     call_python_function("database", "entry_log_insert", rfid, NULL);
 
     servo(0);
 
-    int entered = msg[0];
     if (!entered){
-      int seat = 0;
+      //미입장시
+    int seat = 0;
     // DB -> 해당 RFID로 예약된 좌석 있는지 확인
     seat = call_python_function("database", "check_reservation", rfid, NULL);
 
       if (seat){
-        char cancel_msg[2];
-        snprintf(cancel_msg, 2, "%d0", seat);
-        write(clnt_sock_seat_reserv, cancel_msg, sizeof(cancel_msg));
+        char cancel_msg[3];
+        memset(&cancel_msg, 0, sizeof(cancel_msg));
+        cancel_msg[1] = seat;
+        cancel_msg[2] = '0';
+        write(clnt_sock_seat_reserv, cancel_msg, sizeof(cancel_msg)*3);
         //DB -> 해당 rfid 학생에 대해 좌석 취소
+
         call_python_function("database", "delete_reservation", rfid, NULL);
+        //reserv는 좌석취소하고LED끄기
 
       }
     }
@@ -433,17 +403,16 @@ void *reservation(void *data){
   char connection_msg[] = "Seat reservation client socket \n";
   write(clnt_sock_seat_reserv, connection_msg, sizeof(connection_msg));
   
-  char msg[14];       //좌석예약 서버와 통신 [0-11]rfid, [12]valid, [13]NULL
-  char rfid[12];
+  char msg[15];       //좌석예약 서버와 통신 [0-11]rfid, [12]valid [13]좌석번호 [14]NULL
+  char rfid[13];
   memset(&msg, 0, sizeof(msg));
   memset(&rfid, 0, sizeof(rfid));
 
   while(1){
-    for (int i=0; i<12; i++){
-      if (read(clnt_sock_seat_reserv, &msg[i], sizeof(char)) == -1) 
-        error_handling("[Seat Reservation] Unable to read\n");
-      //strncpy(rfid[i], msg[0], 1);
-    }
+    //RFID태그 들어옴
+    if (read(clnt_sock_seat_reserv, &msg, sizeof(char)*12) == -1) 
+      error_handling("[Seat Reservation] Unable to read\n");
+    strncpy(rfid, msg, 12);
     strncpy(rfid, msg, 12);
 
     int isValid = 0;
@@ -452,34 +421,33 @@ void *reservation(void *data){
 
     if (isValid){
       //예약된 좌석이 있으면
-      snprintf(msg, 13, "%s0", rfid);
+      strncpy(rfid, msg, 12);
+      msg[12] = '0';
+      write(clnt_sock_seat_reserv, msg, sizeof(char)*13);
       printf("Already reserved a seat \n");
       continue;
     }
 
-    int seat_list[4];
+    //char seat_list[SEAT_NUM+1];
     //DB -> 예약 가능한 좌석 목록 받기 (또는 서버에 저장하고 있어도 됨..)
-    seat_list = call_python_function("database", "get_available_seats", rfid, NULL);
+    char seat_list[] = call_python_function("database", "get_available_seats", rfid, NULL);
 
+    //DB -> 예약 가능한 좌석 목록 받기 (string(0110) 형태)
+    //좌석예약 서버로 좌석 목록 전송
+    // snprintf(seat_msg,seat_list.length, "%s", seat_list);
 
-    char seat_msg[1024] = {0};
-    // sprintf(seat_msg, 
-    // "
-    // Available Seats: 
+    write(clnt_sock_seat_reserv, seat_list, sizeof(char)*(SEAT_NUM+1));
 
-    // ┼┬┬┬┼┬┬┬┼┬┬┬┼┬┬┬┼
-    // ┼ %d ┼ %d ┼ %d ┼ %d ┼
-    // ┼┴┴┴┼┴┴┴┼┴┴┴┼┴┴┴┼
-    // ", 1, 2, 3, 4);
+    //버튼 결과 받기 [0-11]rfid, [12]좌석번호
+    memset(&msg, 0, sizeof(msg));
 
-    for (int i=0; i<12; i++){
-      if (read(clnt_sock_seat_reserv, &msg[i], sizeof(char)) == -1) 
-        error_handling("[Seat Reservation] Unable to read\n");
-      //strncpy(rfid[i], msg[0], 1);
-    }
-    //rfid에 대해 지역변수에 저장된 rfid가 아니면 다시 read하는 절차 필요....
-    int seat = msg[0];
+    if (read(clnt_sock_seat_reserv, &msg, sizeof(char)*13) == -1) 
+      error_handling("[Seat Reservation] Unable to read\n");
+    
 
+    strncpy(rfid, msg, 12);
+    int seat = msg[12];
+    
     //DB -> RFID, seat으로 좌석 예약 진행
     call_python_function("database", "reserve_seat", rfid, seat);
 
@@ -487,11 +455,18 @@ void *reservation(void *data){
     write(clnt_sock_seat_reserv, msg, sizeof(msg));
     //LED 출력 변경
   }
+    //좌석예약서버에 LED키라고 전송 [0]좌석번호, [1]valid
+    char LED_message[3];
+    memset(&LED_message, 0, sizeof(LED_message));
+    write(clnt_sock_seat_reserv, LED_message, sizeof(char)*3);
 
-
-
-  // printf("msg = %s\n", msg);
-  //예약이 되면 seat_watch 소켓으로 키라고 전송
+    //좌석감시 서버에 초음파센서 키라고 전송
+    char watch_messagge[3];
+    watch_messagge[0] = seat;
+    watch_messagge[1] = '1';
+    memset(&watch_messagge, 0, sizeof(watch_messagge));
+    write(clnt_sock_seat_watch, watch_messagge, sizeof(char)*3);
+  }
 }
 
 void *watching(void *data){
@@ -504,11 +479,10 @@ void *watching(void *data){
     int count = 0;
     int seat = 0;
 
-    for (int i=0; i<2; i++){
-      if (read(clnt_sock_seat_watch, &msg[i], sizeof(char)) == -1) 
-        error_handling("[Seat Watching] Unable to read \n");
-      //strncpy(rfid[i], msg[0], 1);
-    }
+    if (read(clnt_sock_seat_watch, &msg, sizeof(char)*3) == -1) 
+      error_handling("[Seat Watching] Unable to read \n");
+
+
     seat = msg[0];
     printf("msg: %s", msg);
 
