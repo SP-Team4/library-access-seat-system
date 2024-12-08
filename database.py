@@ -263,9 +263,6 @@ def get_available_seats():
         cursor.execute(query)
         result = cursor.fetchall()
 
-        #if(result == NULL) 
-        #    return 0
-
         # 결과를 seat_list로 변환하고 문자열로 변환
         seat_string = ''.join(str(row[0]) for row in result)
         seat_int = int(seat_string)  # 0
