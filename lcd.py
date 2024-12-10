@@ -7,7 +7,7 @@ def lcd_execute(str1, str2):
     mylcd.lcd_display_string(str1, 1) 
     mylcd.lcd_display_string(str2, 2) 
     
-    time.sleep(3) 
+    time.sleep(10) 
     
     mylcd.lcd_clear() 
     time.sleep(1) 

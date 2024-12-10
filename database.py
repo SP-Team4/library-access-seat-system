@@ -4,10 +4,8 @@ import my_camera
 
 def make_db():
     try:
-        # 데이터베이스 연결 (없으면 새로 생성)
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
-
 
         # MEMBER 테이블 생성
         cursor.execute("""
@@ -72,6 +70,20 @@ def make_db():
             (1), (2), (3), (4);
         """)
 
+        # SEAT 테이블에 데이터 삽입
+        cursor.execute("""
+        INSERT INTO SEAT_RESERVATION_LOG (student_id, seat_id, start_time)
+        VALUES (20210002, 2, CURRENT_TIMESTAMP);
+        """)
+
+        # SEAT 테이블에 데이터 삽입
+        cursor.execute("""
+        UPDATE SEAT
+        SET status = 1
+        WHERE seat_id = 2;
+        """)
+
+
         # 변경사항 저장
         conn.commit()
         print("모든 테이블이 성공적으로 생성되었습니다.")
@@ -82,21 +94,23 @@ def make_db():
         return 0  # 실패 시 0 반환
     
     finally:
-        conn.close()
+        conn.close()  # conn.close()는 반드시 여기서 호출
 
 def find_face_path(rfid):
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
 
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    
-    query = "SELECT student_face FROM MEMBER WHERE rfid_tag_id = ?;"
-    cursor.execute(query, (rfid,))
-    result = cursor.fetchone()
-    conn.close()
-    print(result)
-    result = my_camera.find_image(result[0])  # Assuming camera.find_image takes a face image path
-    print(result)
-    return result
+        query = "SELECT student_face FROM MEMBER WHERE rfid_tag_id = ?;"
+        cursor.execute(query, (rfid,))
+        result = cursor.fetchone()
+        result = my_camera.find_image(result[0])  # Assuming camera.find_image takes a face image path
+        return result
+    except sqlite3.Error as e:
+        print(f"Error: {e}")  # 에러를 로그에 출력
+        return None
+    finally:
+        conn.close()  # conn.close()는 반드시 여기서 호출
 
 def entry_log_insert(student_id):
     try:
@@ -110,20 +124,17 @@ def entry_log_insert(student_id):
         cursor.execute(query, (student_id,))
         conn.commit()
         return 1
-
     except sqlite3.Error as e:
         print(f"Error: {e}")  # 에러를 로그에 출력
         return 0  # 실패 시 0 반환
-
     finally:
-        conn.close()
-
+        conn.close()  # conn.close()는 반드시 여기서 호출
 
 def check_reservation(rfid):    
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
-        
+
         # 1. RFID로 MEMBER 테이블에서 student_id 가져오기
         cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
         result = cursor.fetchone()
@@ -148,58 +159,57 @@ def check_reservation(rfid):
         print(f"Error: {e}")  # 에러를 로그에 출력
         return 0  # 실패 시 0 반환
     finally:
-        conn.close()
-
+        conn.close()  # conn.close()는 반드시 여기서 호출
 
 def reserve_seat(rfid, seat_id):
+    rfid = "027812690245"
+    print("[DB] Checking if reserve_seat function is loaded")
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
 
-        # student_id를 rfid로부터 찾기
-        query = """
-        SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?;
-        """
-        cursor.execute(query, (rfid,))
+        # 1. RFID로 student_id 찾기
+        cursor.execute("""SELECT student_id 
+                        FROM MEMBER 
+                        WHERE rfid_tag_id = ?;""", ( rfid,))
         student = cursor.fetchone()
-
-        if student:
-            student_id = student[0]
-
-            # SEAT_RESERVATION_LOG 테이블에 예약 로그 삽입
-            query = """
-            INSERT INTO SEAT_RESERVATION_LOG (student_id, seat_id, status, start_time)
-            VALUES (?, ?, 1, CURRENT_TIMESTAMP);
-            """
-            cursor.execute(query, (student_id, seat_id))
-
-            # SEAT 테이블에서 해당 좌석의 예약 상태를 1로 업데이트
-            query = """
-            UPDATE SEAT
-            SET is_reserved = 1
-            WHERE seat_id = ?;
-            """
-            cursor.execute(query, (seat_id,))
-
-            # 커밋 후 연결 종료
-            conn.commit()
-            print(f"좌석 {seat_id} 예약이 완료되었습니다.")
-            return 1
-        else:
-            print("해당 RFID에 해당하는 학생이 존재하지 않습니다.")
+        if student is None:
+            print(f"해당 RFID {rfid}에 해당하는 학생이 존재하지 않습니다.")
             return 0
+        student_id = student[0]
+
+        # 2. SEAT 상태 확인
+        cursor.execute("""SELECT status FROM SEAT WHERE seat_id = ?;""", (seat_id,))
+        seat_status = cursor.fetchone()
+
+        if seat_status is None or seat_status[0] == 1:
+            print("이미 예약된 좌석이거나 존재하지 않는 좌석입니다.")
+            return 0
+
+        # 3. SEAT_RESERVATION_LOG에 예약 기록 추가
+        cursor.execute("""INSERT INTO SEAT_RESERVATION_LOG (student_id, seat_id, start_time)
+                          VALUES (?, ?, CURRENT_TIMESTAMP);""", (student_id, seat_id))
+
+        # 4. SEAT 상태 업데이트
+        cursor.execute("""UPDATE SEAT SET status = 1 WHERE seat_id = ?;""", (seat_id,))
+
+        # 변경사항 저장
+        conn.commit()
+        print(f"좌석 {seat_id} 예약이 완료되었습니다.")
+        return 1
+
     except sqlite3.Error as e:
         print(f"Error: {e}")
         return 0
-    finally:
-        conn.close()
 
+    finally:
+        conn.close()  # conn.close()는 반드시 여기서 호출
 
 def delete_reservation(rfid):
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
-        
+
         # 1. RFID로 student_id 가져오기
         cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
         result = cursor.fetchone()
@@ -247,10 +257,10 @@ def delete_reservation(rfid):
         print(f"Error: {e}")
         return 0
     finally:
-        conn.close()
-
+        conn.close()  # conn.close()는 반드시 여기서 호출
 
 def get_available_seats():
+    print("get_available_seats")
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
@@ -267,12 +277,12 @@ def get_available_seats():
         seat_string = ''.join(str(row[0]) for row in result)
         seat_int = int(seat_string)  # 0
         print(seat_int)
-        conn.close()
         return seat_int
     except sqlite3.Error as e:
         print(f"Error: {e}")
         return "0"  # 오류 발생 시 "0" 문자열 반환
-
+    finally:
+        conn.close()  # conn.close()는 반드시 여기서 호출
 
 def increase_count(seat_id):
     try:
@@ -324,8 +334,7 @@ def increase_count(seat_id):
         print(f"Error: {e}")
         return 0
     finally:
-        conn.close()
-
+        conn.close()  # conn.close()는 반드시 여기서 호출
 
 def zero_count(rfid):
     try:
@@ -355,10 +364,10 @@ def zero_count(rfid):
         print(f"Error: {e}")
         return 0
     finally:
-        conn.close()
+        conn.close()  # conn.close()는 반드시 여기서 호출
 
 if __name__ == "__main__":
     # 데이터베이스 연결 (파일 없으면 생성)
-    #make_db()
+    make_db()
     #find_face_path("027812690245") # [('brown.jpg',)]
-    get_available_seats()
+    reserve_seat("027812690245", 3)
