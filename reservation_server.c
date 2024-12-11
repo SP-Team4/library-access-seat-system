@@ -99,14 +99,19 @@ void error_handling(char *message) {
 /****** Thread ******/
 pthread_t reservation_thread;
 
-volatile int server_running = 1;  // 서버 종료 여부를 판단하는 플래그
-
 void *reservation(void *data) {
     char msg[15];       //출입관리 서버와 통신 [0-11]rfid, [12]valid, [13]1:entry 0:exit, [14]NULL
-    char seat_number[8];
     char rfid[13];
     int isValid = 0;  
-    while(server_running){
+
+    char seat_str[6];  // 충분한 크기의 배열로 선언
+    int available_seats = call_python_function("database", "get_available_seats", NULL, NULL);
+    snprintf(seat_str, sizeof(seat_str), "%d", available_seats);
+    // printf("[C] Python function result: %d\n", result);
+    write(clnt_sock_seat_reserv, seat_str, sizeof(char)*6);
+    memset(&seat_str, 0, sizeof(seat_str));
+
+    while(1){
         //RFID태그 들어옴
         if (read(clnt_sock_seat_reserv, &msg, sizeof(char)*12) == -1) 
             error_handling("[Seat Reservation] Unable to read\n");
@@ -125,14 +130,13 @@ void *reservation(void *data) {
         }
 
         //예약 가능한 좌석 목록 받기
-        int available_seats = call_python_function("database", "get_available_seats", NULL, NULL);
+        available_seats = call_python_function("database", "get_available_seats", NULL, NULL);
         if (available_seats == -1) {
             error_handling("[Seat Reservation] Failed to get available seats from Python\n");
         }
-        char seat_str[6];  // 충분한 크기의 배열로 선언
         snprintf(seat_str, sizeof(seat_str), "s%d", available_seats);
         write(clnt_sock_seat_reserv, seat_str, sizeof(char)*6);
-
+        memset(&seat_str,0,sizeof(seat_str));
         
         // 버튼 결과 받기
         memset(&msg, 0, sizeof(msg));  // 배열 초기화
@@ -145,8 +149,15 @@ void *reservation(void *data) {
         printf("[C] Calling Python function reserve_seat with rfid: %s, seat_id: %d\n", rfid, msg);
         int result = call_python_function("database", "reserve_seat", rfid, msg);
         printf("[C] Python function result: %d\n", result);
-    }
 
+        available_seats = call_python_function("database", "get_available_seats", NULL, NULL);
+        if (available_seats == -1) {
+            error_handling("[Seat Reservation] Failed to get available seats from Python\n");
+        }
+        snprintf(seat_str, sizeof(seat_str), "s%d", available_seats);
+        write(clnt_sock_seat_reserv, seat_str, sizeof(char)*6);
+        memset(&seat_str,0,sizeof(seat_str));
+    }
     return NULL;
 }
 

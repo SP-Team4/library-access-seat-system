@@ -366,6 +366,78 @@ def zero_count(rfid):
     finally:
         conn.close()  # conn.close()는 반드시 여기서 호출
 
+def get_seat_count(seat_id):
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+
+        # count 값 가져오기
+        query = """
+        SELECT count
+        FROM SEAT_RESERVATION_LOG
+        WHERE seat_id = ?
+          AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP);
+        """
+        cursor.execute(query, (seat_id,))
+        result = cursor.fetchone()
+
+        if result:
+            return result[0]  # count 값 반환
+        else:
+            print(f"좌석 {seat_id}에 활성화된 예약이 없습니다.")
+            return None  # 활성화된 예약이 없는 경우
+    except sqlite3.Error as e:
+        print(f"Error: {e}")
+        return None
+    finally:
+        conn.close()
+
+def delete_reservation_by_seat(seat_id):
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+
+        # 1. SEAT_RESERVATION_LOG에서 활성화된 예약 확인
+        cursor.execute("""
+            SELECT student_id
+            FROM SEAT_RESERVATION_LOG
+            WHERE seat_id = ?
+              AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
+        """, (seat_id,))
+        reservation = cursor.fetchone()
+
+        if not reservation:
+            print(f"좌석 {seat_id}에 활성화된 예약이 없습니다.")
+            return 0  # 활성화된 예약이 없는 경우
+
+        # 2. 활성화된 예약의 end_time 업데이트
+        current_time = datetime.now()
+        cursor.execute("""
+            UPDATE SEAT_RESERVATION_LOG
+            SET end_time = ?
+            WHERE seat_id = ?
+              AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
+        """, (current_time, seat_id))
+
+        # 3. SEAT 테이블의 상태 업데이트
+        cursor.execute("""
+            UPDATE SEAT
+            SET status = 0
+            WHERE seat_id = ?
+        """, (seat_id,))
+
+        # 변경사항 저장
+        conn.commit()
+        print(f"좌석 {seat_id}의 예약이 성공적으로 취소되었습니다.")
+        return 1
+
+    except sqlite3.Error as e:
+        print(f"Error: {e}")
+        return 0  # 실패 시 0 반환
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     # 데이터베이스 연결 (파일 없으면 생성)
     make_db()
