@@ -3,6 +3,7 @@ from picamera2 import Picamera2
 import cv2
 import os
 import numpy as np
+import time
 
 def find_image(database_img):
     def threaded_task():
@@ -13,6 +14,9 @@ def find_image(database_img):
         picam2.start()
         print("Camera initialization complete.")
         
+        time.sleep(5)  # 5초 대기
+        print("Capturing image after 5-second delay.")
+
         image = picam2.capture_array()
         if image is None:
             print("Error: No image captured")

@@ -278,8 +278,8 @@ void *entrance(void *data){
     //PYTHON -> 카메라 사진 찍고 대조
 
     int valid = call_python_function("database", "find_face_path", rfid, NULL);
-    valid = 1;
-    printf("valid = %d\n", valid);
+    //int valid = 1;
+    printf("[Entrance Server] valid = %d\n", valid);
     memset(&msg, 0, sizeof(msg));
 
     strncpy(msg, rfid, 12);
@@ -327,7 +327,7 @@ void *entrance(void *data){
         //reserv는 좌석취소하고LED끄기
       }
     }
-    printf("end of entrance function");
+    printf("[Entrance Server] end of entrance function");
   }
 }
 
@@ -347,121 +347,154 @@ void *reservation(void *data) {
     while(1){
         //RFID태그 들어옴
         if (read(clnt_sock_seat_reserv, &msg, sizeof(char)*12) == -1) 
-            error_handling("[Seat Reservation] Unable to read\n");
+            error_handling("[Reservation Server] Unable to read\n");
         strncpy(rfid, msg, 12);
-        printf("%s\n", rfid);
+        printf("[Reservation Seat] rfid: %s\n", rfid);
+
+        if(strlen(msg)<5)
+          continue;
 
         int isValid = 0;
         //DB -> 해당 RFID로 예약된 좌석 있는지 확인 (있으면 1)
-        isValid = call_python_function("database", "check_reservation", rfid, NULL);
+        isValid = call_python_function("data6base", "check_reservation", rfid, NULL);
         if (isValid){
             //예약된 좌석이 있으면
-            msg[12] = '0';
-            write(clnt_sock_seat_reserv, msg, sizeof(char)*13);
-            printf("Already reserved a seat \n");
+            char message[2];
+            memset(&message, 0, sizeof(message));
+            message[0] = '0';
+            message[1] = '\n';
+            write(clnt_sock_seat_watch, message, sizeof(char)*2);
+            printf("[Reservation Server] Already reserved a seat \n");
             continue;
         }
+
+        memset(&msg, 0, sizeof(msg));  // 배열 초기화
+
 
         //예약 가능한 좌석 목록 받기
         available_seats = call_python_function("database", "get_available_seats", NULL, NULL);
         if (available_seats == -1) {
-            error_handling("[Seat Reservation] Failed to get available seats from Python\n");
+            error_handling("[Reservation Seat] Failed to get available seats from Python\n");
         }
-        snprintf(seat_str, sizeof(seat_str), "s%d", available_seats);
+        snprintf(seat_str, sizeof(seat_str), "%d", available_seats);
         write(clnt_sock_seat_reserv, seat_str, sizeof(char)*6);
         memset(&seat_str,0,sizeof(seat_str));
         
         // 버튼 결과 받기
         memset(&msg, 0, sizeof(msg));  // 배열 초기화
         if (read(clnt_sock_seat_reserv, &msg, sizeof(char)*2) == -1)  // 1자리 숫자 + NULL 문자
-            error_handling("[Seat Reservation] Unable to read seat id\n");
+            error_handling("[Reservation Seat] Unable to read seat id\n");
 
-        printf("Received seat id: %s\n", msg);
+        if(msg == 0){
+          continue;
+        }
+        
+        printf("[Reservation Server] Received seat id: %s\n", msg);
 
         // DB -> RFID, seat으로 좌석 예약 진행
-        printf("[C] Calling Python function reserve_seat with rfid: %s, seat_id: %d\n", rfid, msg);
+        printf("[Reservation Server] Calling Python function reserve_seat with rfid: %s, seat_id: %d\n", rfid, msg);
         int result = call_python_function("database", "reserve_seat", rfid, msg);
-        printf("[C] Python function result: %d\n", result);
+        printf("[Reservation Server] Python function result: %d\n", result);
 
         available_seats = call_python_function("database", "get_available_seats", NULL, NULL);
         if (available_seats == -1) {
-            error_handling("[Seat Reservation] Failed to get available seats from Python\n");
+            error_handling("[Reservation Seat] Failed to get available seats from Python\n");
         }
-        snprintf(seat_str, sizeof(seat_str), "s%d", available_seats);
+        snprintf(seat_str, sizeof(seat_str), "%d", available_seats);
         write(clnt_sock_seat_reserv, seat_str, sizeof(char)*6);
         memset(&seat_str,0,sizeof(seat_str));
 
-        /*
-            //좌석감시 서버에 초음파센서 키라고 전송
-            char watch_messagge[3];
-            watch_messagge[0] = seat;
-            watch_messagge[1] = '1';
-            memset(&watch_messagge, 0, sizeof(watch_messagge));
-            write(clnt_sock_seat_watch, watch_messagge, sizeof(char)*3);
-        */
+    
+        //좌석감시 서버에 초음파센서 키라고 전송
+        char watch_messagge[3];
+        memset(&watch_messagge, 0, sizeof(watch_messagge));
+        watch_messagge[0] = msg[0];
+        watch_messagge[1] = '1';
+        write(clnt_sock_seat_watch, watch_messagge, sizeof(char)*3);
+        printf("[Seat Watching] 센서 %c번 활성화 명령 전송\n", watch_messagge[0]);
+
     }
     return NULL;
 }
+void *watching(void *data) {
+    char msg[3];
+    memset(&msg, 0, sizeof(msg));
+/*
+    // 초기 센서 활성화
+    msg[0] = '4';
+    msg[1] = '1';
 
-void *watching(void *data){
-  char msg[3];
-  memset(&msg, 0, sizeof(msg));
-  
-  // 초기 센서 활성화
-  msg[0] = '4';
-  msg[1] = '1';
-  write(clnt_sock_seat_watch, msg, sizeof(msg));
-  printf("[Seat Watching] 센서 %d번 활성화 명령 전송\n", msg[0]);
+    write(clnt_sock_seat_watch, msg, sizeof(msg));
+    printf("[Seat Watching] 센서 %c번 활성화 명령 전송\n", msg[0]);
+    */
+    int count = 0;
+    while (1) {
+        memset(&msg, 0, sizeof(msg));
 
-  while(1){
-    if (read(clnt_sock_seat_watch, &msg, sizeof(msg)) == -1) 
-      error_handling("[Seat Watching] Unable to read \n");
+        if (read(clnt_sock_seat_watch, &msg, sizeof(msg)) == -1) {
+            error_handling("[Seat Watching] Unable to read\n");
+        }
 
-    int seat = msg[0] - '0';
-    int detected = msg[1] - '0';
-    printf("[Seat Watching] 수신된 메시지: %s (좌석 %d에서 %s)\n", 
-           msg, seat, detected ? "물체 감지됨" : "물체 없음");
+        // Test용
+        int seat = msg[0] - '0';
+        int detected = msg[1] - '0';
+        char str_seat[2]; // 1 문자 + 널 문자
+        strncpy(str_seat, msg, 1); // 첫 번째 문자 복사
+        str_seat[1] = '\0'; 
 
-    // 감지 횟수 3회 이상이면
-    if (detected >= 3){
-      call_python_function("database", "increase_count", seat, NULL);
-      // 센서 비활성화 명령 전송
-      snprintf(msg, sizeof(msg), "%d0", seat);
-      write(clnt_sock_seat_watch, msg, sizeof(msg));
-      printf("[Seat Watching] 좌석 %d 센서 비활성화 명령 전송\n", seat);
+        printf("[Seat Watching] 수신된 메시지: %s (좌석 %d에서 %s)\n",
+               msg, seat, detected ? "물체 감지됨" : "물체 없음");
+        
+        if (detected == 1) { 
+            // 감지된 경우 count 초기화
+            call_python_function("database", "zero_count", str_seat, NULL);
+            printf("[Seat Watching] count 초기화 완료\n");
+        } else { 
+            // 감지되지 않은 경우 count 증가
+            printf("[Seat Watching] count 증가\n");
+            call_python_function("database", "increase_count", str_seat, NULL);
+
+            // count 값 가져오기
+            int count = call_python_function("database", "get_seat_count", str_seat, NULL);
+            if (count >= 3) {
+                // 센서 비활성화 명령 전달
+                snprintf(msg, sizeof(msg), "%d0", seat);
+                write(clnt_sock_seat_watch, msg, sizeof(msg));
+                printf("[Seat Watching] 좌석 %d 센서 비활성화 명령 전송\n", seat);
+
+                // 예약 삭제
+                call_python_function("database", "delete_reservation_by_seat", str_seat, NULL);
+                printf("[Seat Watching] 좌석 %d 예약 삭제 완료\n", seat);
+
+                char seat_str[6];  // 충분한 크기의 배열로 선언
+                int available_seats = call_python_function("database", "get_available_seats", NULL, NULL);
+                snprintf(seat_str, sizeof(seat_str), "%d", available_seats);
+                // printf("[C] Python function result: %d\n", result);
+                write(clnt_sock_seat_reserv, seat_str, sizeof(char)*6);
+                memset(&seat_str, 0, sizeof(seat_str));
+
+          }
+
+        }
+
     }
-    else{
-      // DB 카운트 초기화만 수행
-      call_python_function("database", "zero_count", seat, NULL);
-    }
-  }
 }
-
 
 int main(int argc, char *argv[]) {
 
   initialize_python();
-
 
   call_python_function("database","make_db", NULL, NULL );
   int state = 1;
   int prev_state = 1;
 
   if (argc != 2) {
-    printf("Usage : %s <port>\n", argv[0]);
+    printf("[Server] Usage : %s <port>\n", argv[0]);
   }
-
-  // Enable GPIO pins
-  // if (-1 == GPIOExport(PIN) || -1 == GPIOExport(POUT)) return (1);
-  // // Set GPIO directions
-  // if (-1 == GPIODirection(PIN, IN) || -1 == GPIODirection(POUT, OUT))
-  //   return (2);
-  // if (-1 == GPIOWrite(POUT, 1)) return (3);
-
 
   //socket settings
   serv_sock = socket(PF_INET, SOCK_STREAM, 0);
-  if (serv_sock == -1) error_handling("socket() error");
+  if (serv_sock == -1) error_handling("[Server] socket() error");
 
   memset(&serv_addr, 0, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
@@ -469,46 +502,44 @@ int main(int argc, char *argv[]) {
   serv_addr.sin_port = htons(atoi(argv[1]));
 
   if (bind(serv_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1)
-    error_handling("bind() error");
+    error_handling("[Server] bind() error");
 
-  if (listen(serv_sock, 5) == -1) error_handling("listen() error");
+  if (listen(serv_sock, 5) == -1) error_handling("[Server] listen() error");
 
+    /***********************************
+    *   출입 관리 client 소켓 연결     *
+    **********************************/
+  
+    if (clnt_sock_entrance < 0){
+      clnt_addr_size = sizeof(clnt_addr);
+      clnt_sock_entrance = accept(serv_sock, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
+      if (clnt_sock_entrance == -1) error_handling("Entrance client: accept() error");
+      printf("[Server] Entrance client: Connection established\n");
+    }
+    
 
-  /***********************************
-   *   출입 관리 client 소켓 연결     *
-   **********************************/
-  /*
-  if (clnt_sock_entrance < 0){
-    clnt_addr_size = sizeof(clnt_addr);
-    clnt_sock_entrance = accept(serv_sock, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
-    if (clnt_sock_entrance == -1) error_handling("Entrance client: accept() error");
-    printf("Entrance client: Connection established\n");
-  }
-  */
+    /***********************************
+    *    좌석 예약 client 소켓 연결    *
+    **********************************/
+      if (clnt_sock_seat_reserv < 0){
+      clnt_addr_size = sizeof(clnt_addr);
+      clnt_sock_seat_reserv = accept(serv_sock, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
+      if (clnt_sock_seat_reserv == -1) error_handling("Seat reservation client: accept() error");
+      printf("[Server] Seat reservation client: Connection established\n");
+    }
 
-
-  /***********************************
-   *    좌석 예약 client 소켓 연결    *
-   **********************************/
-   
-    if (clnt_sock_seat_reserv < 0){
-    clnt_addr_size = sizeof(clnt_addr);
-    clnt_sock_seat_reserv = accept(serv_sock, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
-    if (clnt_sock_seat_reserv == -1) error_handling("Seat reservation client: accept() error");
-    printf("Seat reservation client: Connection established\n");
-  }
-
-  /***********************************
-   *   좌석 감시 client 소켓 연결     *
-   **********************************/
- /*
-  if (clnt_sock_seat_watch < 0){
-    clnt_addr_size = sizeof(clnt_addr);
-    clnt_sock_seat_watch = accept(serv_sock, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
-    if (clnt_sock_seat_watch == -1) error_handling("Seat watching client: accept() error");
-    printf("Seat watching client:  Connection established\n");
-  }
-*/
+    /***********************************
+    *   좌석 감시 client 소켓 연결     *
+    **********************************/
+  
+    if (clnt_sock_seat_watch < 0){
+      clnt_addr_size = sizeof(clnt_addr);
+      clnt_sock_seat_watch = accept(serv_sock, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
+      if (clnt_sock_seat_watch == -1) error_handling("Seat watching client: accept() error");
+      printf("[Server] Seat watching client:  Connection established\n");
+    }
+  
+  
                                                                                                                                                                                                                                                                                                                                                                                                                  
   printf(" ####    ##  ###                              ### #                                     \n");
   printf(" ##     ##   ##                             ##  ##               #                      \n");
@@ -521,17 +552,15 @@ int main(int argc, char *argv[]) {
   printf("                                    ###             ###                                 \n");
   printf("                                    ##              ##                                  \n");
 
-  //call_python_function("lcd","lcd_execute","ajou", "library");
+  call_python_function("lcd","lcd_execute","ajou", "library");
 
-  
-    
-  //pthread_create(&entrance_thread, NULL, entrance, NULL);
+  pthread_create(&entrance_thread, NULL, entrance, NULL);
   pthread_create(&seat_reserv_thread, NULL, reservation, NULL);
-  //pthread_create(&seat_watch_thread, NULL, watching, NULL);    
+  pthread_create(&seat_watch_thread, NULL, watching, NULL);    
 
-  //pthread_join(entrance_thread, (void **)&status);
+  pthread_join(entrance_thread, (void **)&status);
   pthread_join(seat_reserv_thread, (void **)&status);
-  //pthread_join(seat_watch_thread, (void **)&status);
+  pthread_join(seat_watch_thread, (void **)&status);
 
   close(clnt_sock_entrance);
   close(clnt_sock_seat_reserv);

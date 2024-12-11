@@ -44,6 +44,7 @@ def make_db():
             seat_id INTEGER,
             start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
             end_time DATETIME,
+            count INTEGER DEFAULT 0,
             FOREIGN KEY (student_id) REFERENCES MEMBER(student_id),
             FOREIGN KEY (seat_id) REFERENCES SEAT(seat_id)
         );
@@ -73,24 +74,24 @@ def make_db():
         # SEAT 테이블에 데이터 삽입
         cursor.execute("""
         INSERT INTO SEAT_RESERVATION_LOG (student_id, seat_id, start_time)
-        VALUES (20210002, 2, CURRENT_TIMESTAMP);
+        VALUES (20210002, 3, CURRENT_TIMESTAMP);
         """)
 
         # SEAT 테이블에 데이터 삽입
         cursor.execute("""
         UPDATE SEAT
         SET status = 1
-        WHERE seat_id = 2;
+        WHERE seat_id = 3;
         """)
 
 
         # 변경사항 저장
         conn.commit()
-        print("모든 테이블이 성공적으로 생성되었습니다.")
+        print("[DB]모든 테이블이 성공적으로 생성되었습니다.")
         return 1
 
     except sqlite3.Error as e:
-        print(f"Error: {e}")  # 에러를 로그에 출력
+        print(f"[DB]Error: {e}")  # 에러를 로그에 출력
         return 0  # 실패 시 0 반환
     
     finally:
@@ -107,7 +108,7 @@ def find_face_path(rfid):
         result = my_camera.find_image(result[0])  # Assuming camera.find_image takes a face image path
         return result
     except sqlite3.Error as e:
-        print(f"Error: {e}")  # 에러를 로그에 출력
+        print(f"[DB]Error: {e}")  # 에러를 로그에 출력
         return None
     finally:
         conn.close()  # conn.close()는 반드시 여기서 호출
@@ -125,7 +126,7 @@ def entry_log_insert(student_id):
         conn.commit()
         return 1
     except sqlite3.Error as e:
-        print(f"Error: {e}")  # 에러를 로그에 출력
+        print(f"[DB]Error: {e}")  # 에러를 로그에 출력
         return 0  # 실패 시 0 반환
     finally:
         conn.close()  # conn.close()는 반드시 여기서 호출
@@ -156,7 +157,7 @@ def check_reservation(rfid):
         return 1 if reservation else 0
 
     except sqlite3.Error as e:
-        print(f"Error: {e}")  # 에러를 로그에 출력
+        print(f"[DB]Error: {e}")  # 에러를 로그에 출력
         return 0  # 실패 시 0 반환
     finally:
         conn.close()  # conn.close()는 반드시 여기서 호출
@@ -174,7 +175,7 @@ def reserve_seat(rfid, seat_id):
                         WHERE rfid_tag_id = ?;""", ( rfid,))
         student = cursor.fetchone()
         if student is None:
-            print(f"해당 RFID {rfid}에 해당하는 학생이 존재하지 않습니다.")
+            print(f"[DB]해당 RFID {rfid}에 해당하는 학생이 존재하지 않습니다.")
             return 0
         student_id = student[0]
 
@@ -183,7 +184,7 @@ def reserve_seat(rfid, seat_id):
         seat_status = cursor.fetchone()
 
         if seat_status is None or seat_status[0] == 1:
-            print("이미 예약된 좌석이거나 존재하지 않는 좌석입니다.")
+            print("[DB]이미 예약된 좌석이거나 존재하지 않는 좌석입니다.")
             return 0
 
         # 3. SEAT_RESERVATION_LOG에 예약 기록 추가
@@ -195,11 +196,11 @@ def reserve_seat(rfid, seat_id):
 
         # 변경사항 저장
         conn.commit()
-        print(f"좌석 {seat_id} 예약이 완료되었습니다.")
+        print(f"[DB]좌석 {seat_id} 예약이 완료되었습니다.")
         return 1
 
     except sqlite3.Error as e:
-        print(f"Error: {e}")
+        print(f"[DB]Error: {e}")
         return 0
 
     finally:
@@ -214,7 +215,7 @@ def delete_reservation(rfid):
         cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
         result = cursor.fetchone()
         if not result:
-            print("해당 RFID에 해당하는 학생이 없습니다.")
+            print("[DB]해당 RFID에 해당하는 학생이 없습니다.")
             return 0
         student_id = result[0]
 
@@ -228,7 +229,7 @@ def delete_reservation(rfid):
         reservation = cursor.fetchone()
 
         if not reservation:
-            print("현재 활성화된 예약이 없습니다.")
+            print("[DB]현재 활성화된 예약이 없습니다.")
             return 0
         seat_id = reservation[0]
 
@@ -251,16 +252,16 @@ def delete_reservation(rfid):
 
         # 변경사항 저장
         conn.commit()
-        print(f"예약이 성공적으로 취소되었습니다. 좌석 {seat_id}이 초기화되었습니다.")
+        print(f"[DB]예약이 성공적으로 취소되었습니다. 좌석 {seat_id}이 초기화되었습니다.")
         return 1
     except sqlite3.Error as e:
-        print(f"Error: {e}")
+        print(f"[DB]Error: {e}")
         return 0
     finally:
         conn.close()  # conn.close()는 반드시 여기서 호출
 
 def get_available_seats():
-    print("get_available_seats")
+    print("[DB]get_available_seats")
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
@@ -276,10 +277,10 @@ def get_available_seats():
         # 결과를 seat_list로 변환하고 문자열로 변환
         seat_string = ''.join(str(row[0]) for row in result)
         seat_int = int(seat_string)  # 0
-        print(seat_int)
+        print("[DB] seat_list: {}".format(seat_int))
         return seat_int
     except sqlite3.Error as e:
-        print(f"Error: {e}")
+        print(f"[DB]Error: {e}")
         return "0"  # 오류 발생 시 "0" 문자열 반환
     finally:
         conn.close()  # conn.close()는 반드시 여기서 호출
@@ -325,43 +326,56 @@ def increase_count(seat_id):
         # 변경사항 저장
         conn.commit()
 
-        # 4. count 값이 3 이상인 경우 예약 취소
-        if updated_count and updated_count[0] >= 3:
-            delete_reservation_by_seat(seat_id)
-                    
         return 1
     except sqlite3.Error as e:
-        print(f"Error: {e}")
+        print(f"[DB]Error: {e}")
         return 0
     finally:
         conn.close()  # conn.close()는 반드시 여기서 호출
 
-def zero_count(rfid):
+def zero_count(seat_id):
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
 
-        # 1. RFID로 student_id 가져오기
-        cursor.execute("SELECT student_id FROM MEMBER WHERE rfid_tag_id = ?", (rfid,))
+         # 1. SEAT_RESERVATION_LOG 테이블에서 seat_id와 연결된 student_id 가져오기
+        cursor.execute("""
+            SELECT student_id 
+            FROM SEAT_RESERVATION_LOG
+            WHERE seat_id = ?
+              AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
+        """, (seat_id,))
         result = cursor.fetchone()
+        
         if not result:
-            print("해당 RFID에 해당하는 학생이 없습니다.")
-            return 0
+            return 0  # 해당 seat_id로 예약 중인 사용자가 없을 경우
+        
         student_id = result[0]
-
-        # 2. count 값 0으로 업데이트
+        
+        # 2. count 증가시키기
         cursor.execute("""
             UPDATE SEAT_RESERVATION_LOG
             SET count = 0
             WHERE student_id = ?
+              AND seat_id = ?
               AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
-        """, (student_id,))
+        """, (student_id, seat_id))
+            
+        # 3. 증가된 count 값 가져오기
+        cursor.execute("""
+            SELECT count
+            FROM SEAT_RESERVATION_LOG
+            WHERE student_id = ?
+              AND seat_id = ?
+              AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP)
+        """, (student_id, seat_id))
+        updated_count = cursor.fetchone()
 
         # 변경사항 저장
         conn.commit()
         return 1
     except sqlite3.Error as e:
-        print(f"Error: {e}")
+        print(f"[DB]Error: {e}")
         return 0
     finally:
         conn.close()  # conn.close()는 반드시 여기서 호출
@@ -370,6 +384,7 @@ def get_seat_count(seat_id):
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
+        print(seat_id) 
 
         # count 값 가져오기
         query = """
@@ -384,10 +399,10 @@ def get_seat_count(seat_id):
         if result:
             return result[0]  # count 값 반환
         else:
-            print(f"좌석 {seat_id}에 활성화된 예약이 없습니다.")
+            print(f"[DB]좌석 {seat_id}에 활성화된 예약이 없습니다.")
             return None  # 활성화된 예약이 없는 경우
     except sqlite3.Error as e:
-        print(f"Error: {e}")
+        print(f"[DB]Error: {e}")
         return None
     finally:
         conn.close()
@@ -407,7 +422,7 @@ def delete_reservation_by_seat(seat_id):
         reservation = cursor.fetchone()
 
         if not reservation:
-            print(f"좌석 {seat_id}에 활성화된 예약이 없습니다.")
+            print(f"[DB]좌석 {seat_id}에 활성화된 예약이 없습니다.")
             return 0  # 활성화된 예약이 없는 경우
 
         # 2. 활성화된 예약의 end_time 업데이트
@@ -428,11 +443,11 @@ def delete_reservation_by_seat(seat_id):
 
         # 변경사항 저장
         conn.commit()
-        print(f"좌석 {seat_id}의 예약이 성공적으로 취소되었습니다.")
+        print(f"[DB]좌석 {seat_id}의 예약이 성공적으로 취소되었습니다.")
         return 1
 
     except sqlite3.Error as e:
-        print(f"Error: {e}")
+        print(f"[DB]Error: {e}")
         return 0  # 실패 시 0 반환
     finally:
         conn.close()
