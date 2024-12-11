@@ -265,15 +265,19 @@ def main():
         print(f"unable to connect socket")
         sys.exit(1)
 
-    # 스레드 시작receive_messages
+    # 스레드 시작
     rfid_thread = threading.Thread(target=rfid_reading, args=(sock,))
     controller_thread = threading.Thread(target=controller, args=(sock,))
+    timer_thread = threading.Thread(target=time_out, args=(None,))
 
     rfid_thread.daemon = True 
     controller_thread.daemon = True 
+    timer_thread.daemon = True
+
 
     rfid_thread.start()
     controller_thread.start()
+    timer_thread.start()
 
 
 # def receive_messages(sock):
