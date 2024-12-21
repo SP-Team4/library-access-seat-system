@@ -33,7 +33,6 @@
 #define ECHO4 12
 
 // 로그 출력을 위한 매크로 
-#define COMM_LOG    "[통신 쓰레드] "
 #define SENSOR1_LOG "[센서 1 쓰레드] "
 #define SENSOR2_LOG "[센서 2 쓰레드] "
 #define SENSOR3_LOG "[센서 3 쓰레드] "
@@ -48,11 +47,7 @@ typedef struct {
 // 전역 변수들
 int sensor_active[4] = {0, 0, 0, 0};
 pthread_mutex_t sensor_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t thread_start_cond = PTHREAD_COND_INITIALIZER;
-pthread_mutex_t thread_start_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t socket_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-int threads_ready = 0;
 int sock;
 
 static int GPIOExport(int pin) {
@@ -153,8 +148,8 @@ static int GPIOWrite(int pin, int value) {
 }
 
 double measure_distance(int trig, int echo, int sensor_num) {
-    clock_t start_t, end_t;
-    double time;
+    struct timespec start_time, end_time;
+    double time_diff;
     const char* thread_log;
     
     switch(sensor_num) {
@@ -165,6 +160,7 @@ double measure_distance(int trig, int echo, int sensor_num) {
         default: thread_log = "[ Unknown ] "; break;
     }
 
+    // TRIG 신호 전송
     if (GPIOWrite(trig, LOW) == -1) {
         printf("%sGPIO write LOW 오류\n", thread_log);
         return -1;
@@ -182,33 +178,31 @@ double measure_distance(int trig, int echo, int sensor_num) {
         return -1;
     }
 
-    // echo 핀이 HIGH가 될 때까지 대기
+    // ECHO 신호 대기 및 측정
     while (GPIORead(echo) == 0) {
-        start_t = clock();
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
     }
-    // echo 핀이 LOW가 될 때까지 대기
+    
     while (GPIORead(echo) == 1) {
-        end_t = clock();
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
     }
 
-    time = (double)(end_t - start_t) / CLOCKS_PER_SEC;
-    double distance = time / 2 * 34000;
-    printf("함수 안 distance 값: %.2f\n", distance);
-    return distance;
-}
+    // 시간 차이 계산 (나노초 단위까지 고려)
+    time_diff = (end_time.tv_sec - start_time.tv_sec) + 
+                (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
+    
+    // 거리 계산 (음속 = 340m/s = 34000cm/s)
+    double distance = time_diff * 17000.0; // 34000/2 = 17000
 
-void error_handling(char *message) {
-    fputs(message, stderr);
-    fputc('\n', stderr);
-    exit(1);
+    return distance;
 }
 
 void* sensor_thread(void* arg) {
     sensor_params* params = (sensor_params*)arg;
     char result[3] = {0};
     const char* thread_log;
-    struct timespec last_measurement_time;
-    struct timespec current_time;
+    struct timespec last_measurement_time, current_time, activation_time;
+    int was_active = 0;  // 이전 상태를 추적하기 위한 변수
     
     switch(params->sensor_num) {
         case 1: thread_log = SENSOR1_LOG; break;
@@ -219,15 +213,6 @@ void* sensor_thread(void* arg) {
     }
     
     printf("%s쓰레드 시작\n", thread_log);
-    
-    pthread_mutex_lock(&thread_start_mutex);
-    threads_ready++;
-    if(threads_ready == 4) {
-        printf("%s마지막 센서 쓰레드 준비 완료\n", thread_log);
-        pthread_cond_signal(&thread_start_cond);
-    }
-    pthread_mutex_unlock(&thread_start_mutex);
-    
     clock_gettime(CLOCK_MONOTONIC, &last_measurement_time);
     
     while(1) {
@@ -235,22 +220,34 @@ void* sensor_thread(void* arg) {
         int is_active = sensor_active[params->sensor_num - 1];
         pthread_mutex_unlock(&sensor_mutex);
         
+        // 센서가 새롭게 활성화된 경우
+        if(is_active && !was_active) {
+            clock_gettime(CLOCK_MONOTONIC, &activation_time);
+            printf("%s센서 활성화. 10초 후 측정 시작\n", thread_log);
+            was_active = 1;
+        }
+        // 센서가 비활성화된 경우
+        else if(!is_active && was_active) {
+            was_active = 0;
+            printf("%s센서 비활성화\n", thread_log);
+        }
+        
         if(is_active) {
-            printf("active 확인\n");
             clock_gettime(CLOCK_MONOTONIC, &current_time);
-            double elapsed_seconds = (current_time.tv_sec - last_measurement_time.tv_sec) + 
-                                   (current_time.tv_nsec - last_measurement_time.tv_nsec) / 1e9;
-            printf("elapsed_seconds 값: %.2f\n", elapsed_seconds);
             
-            // 10초마다 측정 및 전송
-            if(elapsed_seconds >= 10.0) {
-                printf("elapsed_seconds 확인\n");
+            // 센서 활성화 후 경과 시간 계산
+            double activation_elapsed = (current_time.tv_sec - activation_time.tv_sec) + 
+                                     (current_time.tv_nsec - activation_time.tv_nsec) / 1e9;
             
+            // 마지막 측정 후 경과 시간 계산
+            double measurement_elapsed = (current_time.tv_sec - last_measurement_time.tv_sec) + 
+                                      (current_time.tv_nsec - last_measurement_time.tv_nsec) / 1e9;
+            
+            // 활성화 후 10초 이상 경과했고, 마지막 측정 후 10초 이상 경과한 경우
+            if(activation_elapsed >= 10.0 && measurement_elapsed >= 10.0) {
                 double distance = measure_distance(params->trig, params->echo, params->sensor_num);
-                printf("distance 값: %.2f\n", distance);
 
                 if(distance >= 0) {
-                    printf("distance 확인:\n");
                     int detected = (distance <= DISTANCE_THRESHOLD) ? 1 : 0;
                     snprintf(result, sizeof(result), "%d%d", params->sensor_num, detected);
                     
@@ -259,74 +256,39 @@ void* sensor_thread(void* arg) {
                     if (sent <= 0) {
                         printf("%s결과 전송 실패\n", thread_log);
                     } else {
-                        printf("측정 확인\n");
                         printf("%s거리: %.2fcm, %s 감지됨, 결과: %s 전송됨\n", 
                                thread_log, distance, detected ? "물체" : "물체 미", result);
                     }
                     pthread_mutex_unlock(&socket_mutex);
                     
-                    // 측정 시간 업데이트
                     clock_gettime(CLOCK_MONOTONIC, &last_measurement_time);
                 } else {
                     printf("%s거리 측정 실패\n", thread_log);
                 }
             }
         }
-        usleep(100000); // 100ms 대기 (CPU 사용률 감소)
+        usleep(50000); // 50ms 대기
     }
     return NULL;
 }
 
-void* communication_thread(void* arg) {
-    char recv_msg[3] = {0};
-    int str_len;
-    
-    printf("%s쓰레드 시작\n", COMM_LOG);
-    
-    pthread_mutex_lock(&thread_start_mutex);
-    while(threads_ready < 4) {
-        pthread_cond_wait(&thread_start_cond, &thread_start_mutex);
-    }
-    printf("%s모든 센서 쓰레드 준비 완료, 통신 시작\n", COMM_LOG);
-    pthread_mutex_unlock(&thread_start_mutex);
-    
-    while(1) {
-        memset(recv_msg, 0, sizeof(recv_msg));
-        str_len = read(sock, recv_msg, 2);
-        
-        printf("str_len: %d\n", str_len);
-        if (str_len <= 0) {
-            printf("%s연결 오류 또는 종료\n", COMM_LOG);
-            break;
-        }
-        
-        if (str_len == 2) {
-            printf("서버로부터 메시지 수신: %s\n", recv_msg);
-            
-            int sensor_num = recv_msg[0] - '0';
-            int action = recv_msg[1] - '0';
-            
-            if (sensor_num >= 1 && sensor_num <= 4 && (action == 0 || action == 1)) {
-                pthread_mutex_lock(&sensor_mutex);
-                sensor_active[sensor_num-1] = action;
-                pthread_mutex_unlock(&sensor_mutex);
-                
-                printf("센서 %d번 %s\n", sensor_num, action ? "켜짐" : "꺼짐");
-            }
-        }
-    }
-    return NULL;
+void error_handling(char *message) {
+    fputs(message, stderr);
+    fputc('\n', stderr);
+    exit(1);
 }
 
 int main(int argc, char *argv[]) {
     struct sockaddr_in serv_addr;
-    pthread_t threads[5];
+    pthread_t threads[4];
     sensor_params sensors[4] = {
         {TRIG1, ECHO1, 1},
         {TRIG2, ECHO2, 2},
         {TRIG3, ECHO3, 3},
         {TRIG4, ECHO4, 4}
     };
+    char recv_msg[3] = {0};
+    int str_len;
 
     if (argc != 3) {
         printf("사용법: %s <IP> <port>\n", argv[0]);
@@ -361,20 +323,13 @@ int main(int argc, char *argv[]) {
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
-serv_addr.sin_port = htons(atoi(argv[2]));
+    serv_addr.sin_port = htons(atoi(argv[2]));
 
     if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1)
         error_handling("connect() error");
 
     printf("서버 연결 성공\n");
     printf("GPIO 초기화 완료. 쓰레드를 시작합니다...\n");
-
-    // 통신 쓰레드 먼저 생성
-    if(pthread_create(&threads[4], NULL, communication_thread, NULL) != 0) {
-        printf("통신 쓰레드 생성 실패\n");
-        return 3;
-    }
-    printf("통신 쓰레드가 생성되었습니다\n");
 
     // 센서 쓰레드 생성
     for(int i = 0; i < 4; i++) {
@@ -386,21 +341,63 @@ serv_addr.sin_port = htons(atoi(argv[2]));
         usleep(100000);
     }
 
-    // 쓰레드 종료 대기
-    for(int i = 0; i < 5; i++) {
-        pthread_join(threads[i], NULL);
+    // 메인 쓰레드에서 서버로부터 메시지 수신
+    fd_set readfds;
+    struct timeval tv;
+    int max_fd = sock + 1;
+
+    while(1) {
+        FD_ZERO(&readfds);
+        FD_SET(sock, &readfds);
+        
+        // timeout 설정 (1초)
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+
+        int activity = select(max_fd, &readfds, NULL, NULL, &tv);
+        
+        if (activity < 0) {
+            printf("select error\n");
+            break;
+        }
+        
+        if (activity > 0 && FD_ISSET(sock, &readfds)) {
+            memset(recv_msg, 0, sizeof(recv_msg));
+            str_len = read(sock, recv_msg, 2);
+            
+            if (str_len <= 0) {
+                printf("연결 종료 또는 오류\n");
+                break;
+            }
+            
+            if (str_len == 2) {
+                printf("서버로부터 메시지 수신: %s\n", recv_msg);
+                
+                int sensor_num = recv_msg[0] - '0';
+                int action = recv_msg[1] - '0';
+                
+                if (sensor_num >= 1 && sensor_num <= 4 && (action == 0 || action == 1)) {
+                    pthread_mutex_lock(&sensor_mutex);
+                    sensor_active[sensor_num-1] = action;
+                    pthread_mutex_unlock(&sensor_mutex);
+                    
+                printf("센서 %d번 %s\n", sensor_num, action ? "켜짐" : "꺼짐");
+                }
+            }
+        }
     }
 
     // 정리
     close(sock);
+    
+    // GPIO 정리
     GPIOUnexport(TRIG1); GPIOUnexport(ECHO1);
     GPIOUnexport(TRIG2); GPIOUnexport(ECHO2);
     GPIOUnexport(TRIG3); GPIOUnexport(ECHO3);
     GPIOUnexport(TRIG4); GPIOUnexport(ECHO4);
     
-    pthread_mutex_destroy(&thread_start_mutex);
+    // 뮤텍스 정리
     pthread_mutex_destroy(&socket_mutex);
-    pthread_cond_destroy(&thread_start_cond);
     pthread_mutex_destroy(&sensor_mutex);
 
     return 0;
