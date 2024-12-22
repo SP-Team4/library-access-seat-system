@@ -163,7 +163,6 @@ def check_reservation(rfid):
         conn.close()  # conn.close()는 반드시 여기서 호출
 
 def reserve_seat(rfid, seat_id):
-    rfid = "027812690245"
     print("[DB] Checking if reserve_seat function is loaded")
     try:
         conn = sqlite3.connect("database.db")
