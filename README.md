@@ -78,15 +78,15 @@
     </td>
     <td align="center">
       <img src="https://avatars.githubusercontent.com/bbanghe" width="70" height="70" /><br />
-      <a href="https://github.com/HANTAEDONG">박세연</a>
+      <a href="https://github.com/bbanghe">박세연</a>
     </td>
     <td align="center">
       <img src="https://avatars.githubusercontent.com/tinon1004" width="70" height="70" /><br />
-      <a href="https://github.com/JNL-2002">조나애</a>
+      <a href="https://github.com/tinon1004">조나애</a>
     </td>
     <td align="center">
       <img src="https://avatars.githubusercontent.com/bumjuni" width="70" height="70" /><br />
-      <a href="https://github.com/OfficialJOLO">장지윤</a>
+      <a href="https://github.com/bumjuni">장지윤</a>
     </td>
   </tr>
   <tr>
