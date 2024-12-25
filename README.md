@@ -89,6 +89,36 @@
       <a href="https://github.com/OfficialJOLO">장지윤</a>
     </td>
   </tr>
+  <tr>
+    <td align="left">
+        <ul>
+          <li>RFID 출입 관리 시스템 구현</li>
+          <li>모션 센서 제어</li>
+          <li>데이터베이스 설계</li>
+        </ul>
+    </td>
+    <td align="left">
+        <ul>
+          <li>카메라 모듈 구현</li>
+          <li>LCD 센서 구현</li>
+          <li>데이터베이스 설계 및 연동</li>
+        </ul>
+    </td>
+    <td align="left">
+        <ul>
+          <li>초음파 센서 기반</li>
+          <li>좌석 점유 확인 시스템 구현</li>
+          <li>데이터베이스 설계</li>
+        </ul>
+    </td>
+    <td align="left">
+        <ul>
+          <li>RFID 기반 좌석 예약 시스템 구현</li>
+          <li>메인 서버 구현</li>
+        </ul>
+    </td>
+  </tr>
 </table>
+
 
 ---
